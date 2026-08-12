@@ -26,7 +26,8 @@ class CauseListScraper(private val context: Context) {
         val totalHits: Int,
         val rowsScanned: Int,
         val errors: List<String>,
-        val lines: List<String>
+        val lines: List<String>,
+        val approvalHits: Int = 0
     )
 
     private val db = Db.get(context)
@@ -40,6 +41,7 @@ class CauseListScraper(private val context: Context) {
         var newHits = 0
         var totalHits = 0
         var rows = 0
+        var approvalHits = 0
         val errors = ArrayList<String>()
         val lines = ArrayList<String>()
 
@@ -50,6 +52,7 @@ class CauseListScraper(private val context: Context) {
                 newHits += r.newHits
                 totalHits += r.totalHits
                 rows += r.rowsScanned
+                approvalHits += r.approvalHits
                 lines.addAll(r.lines)
             } catch (e: Exception) {
                 errors.add("${src.label}: ${e.message ?: e.javaClass.simpleName}")
@@ -57,7 +60,8 @@ class CauseListScraper(private val context: Context) {
         }
 
         db.pruneFixtures()
-        return Result(newHits, totalHits, rows, errors, lines)
+        db.pruneScanRows()
+        return Result(newHits, totalHits, rows, errors, lines, approvalHits)
     }
 
     fun fetch(urlString: String): String {
@@ -108,16 +112,18 @@ class CauseListScraper(private val context: Context) {
     ): Result {
         val terms = db.listWatchTerms(onlyEnabled = true)
         val cases = db.listCases(null, null)
-        if (terms.isEmpty() && cases.isEmpty()) {
+        val pending = db.listPendingFiles()
+        db.insertScanRows(sourceLabel, rows)
+        if (terms.isEmpty() && cases.isEmpty() && pending.isEmpty()) {
             return Result(
                 0, 0, rows.size,
-                listOf("Nothing to look for yet — add a keyword or a case first"),
+                listOf("Nothing to look for yet — add a keyword, a case or a pending file first"),
                 emptyList()
             )
         }
 
         // Tokenise the terms once, not once per row.
-        val probes = Matcher.compile(terms, cases)
+        val probes = Matcher.compile(terms, cases, pending)
 
         var newHits = 0
         var totalHits = 0
@@ -129,7 +135,8 @@ class CauseListScraper(private val context: Context) {
             val all = Matcher.findHits(row, probes)
             if (all.isEmpty()) continue
             // A row that is one of the user's own cases belongs under "My cases"
-            // only — a keyword matching the same line must not duplicate it.
+            // only — a keyword or pending-file match on the same line must not
+            // duplicate it.
             val mine = all.filter { it.caseId != 0L }
             val hits = if (mine.isNotEmpty()) mine else all
             val clipped = if (row.length > 400) row.substring(0, 400) + "…" else row
@@ -137,8 +144,9 @@ class CauseListScraper(private val context: Context) {
                 totalHits++
                 found.add(
                     Fixture(
-                        hash = Matcher.hashOf(sourceUrl, listDate, clipped, h.term),
+                        hash = Matcher.hashOf(sourceUrl, listDate, clipped, h.term, h.pendingId.toString()),
                         caseId = h.caseId,
+                        pendingId = h.pendingId,
                         sourceLabel = sourceLabel,
                         sourceUrl = sourceUrl,
                         listDate = listDate,
@@ -154,15 +162,20 @@ class CauseListScraper(private val context: Context) {
 
         // One transaction for the whole page rather than one per row.
         val inserted = db.insertFixtures(found)
+        var approvalHits = 0
         for (f in inserted) {
             newHits++
+            if (f.needsApproval()) approvalHits++
             lines.add(
-                "${f.matchedTerm} — $sourceLabel" +
-                    if (listDate.isNotBlank()) " ($listDate)" else ""
+                buildString {
+                    append(f.matchedTerm).append(" — ").append(sourceLabel)
+                    if (listDate.isNotBlank()) append(" (").append(listDate).append(")")
+                    if (f.needsApproval()) append(" — needs approval")
+                }
             )
         }
 
-        return Result(newHits, totalHits, rows.size, emptyList(), lines)
+        return Result(newHits, totalHits, rows.size, emptyList(), lines, approvalHits)
     }
 
     /**

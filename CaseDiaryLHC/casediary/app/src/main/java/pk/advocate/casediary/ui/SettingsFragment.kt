@@ -141,7 +141,7 @@ class SettingsFragment : Fragment() {
 
     private fun renderTerms() {
         b.termChips.removeAllViews()
-        val terms = db.listWatchTerms()
+        val terms = db.listWatchTerms() // already sorted PRIMARY first
         if (terms.isEmpty()) {
             val chip = Chip(requireContext())
             chip.text = "No keywords yet"
@@ -151,16 +151,28 @@ class SettingsFragment : Fragment() {
         }
         for (t in terms) {
             val chip = Chip(requireContext())
-            chip.text = "${t.term}  ·  ${t.kind.lowercase()}"
-            chip.isCheckable = true
+            val star = if (t.priority == WatchTerm.PRIORITY_PRIMARY) "★ " else ""
+            val tag = if (t.builtin) "always on" else t.kind.lowercase()
+            chip.text = "$star${t.term}  ·  $tag"
+            chip.isCheckable = !t.builtin
             chip.isChecked = t.enabled
-            chip.isCloseIconVisible = true
-            chip.setOnCheckedChangeListener { _, checked ->
-                db.setWatchTermEnabled(t.id, checked)
-            }
-            chip.setOnCloseIconClickListener {
-                db.deleteWatchTerm(t.id)
-                renderTerms()
+            chip.isCloseIconVisible = !t.builtin
+            if (!t.builtin) {
+                chip.setOnCheckedChangeListener { _, checked ->
+                    db.setWatchTermEnabled(t.id, checked)
+                }
+                chip.setOnCloseIconClickListener {
+                    db.deleteWatchTerm(t.id)
+                    renderTerms()
+                }
+                chip.setOnLongClickListener {
+                    db.setWatchTermPriority(
+                        t.id,
+                        if (t.priority == WatchTerm.PRIORITY_PRIMARY) WatchTerm.PRIORITY_OTHER else WatchTerm.PRIORITY_PRIMARY
+                    )
+                    renderTerms()
+                    true
+                }
             }
             b.termChips.addView(chip)
         }
@@ -188,12 +200,16 @@ class SettingsFragment : Fragment() {
             kinds.map { it.second }
         )
 
+        val primaryCheck = com.google.android.material.checkbox.MaterialCheckBox(requireContext())
+        primaryCheck.text = "Primary keyword — flagged first, treated as high priority"
+
         container.addView(input)
         container.addView(spinner)
+        container.addView(primaryCheck)
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.add_keyword)
-            .setMessage("Matching ignores case, spacing and punctuation, so \"Ahmad Raza\" also finds \"RAZA, AHMAD\".")
+            .setMessage("Matching ignores case, spacing and punctuation, so \"Ahmad Raza\" also finds \"RAZA, AHMAD\". Long-press a keyword chip any time to toggle its priority.")
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
                 val text = input.text?.toString()?.trim().orEmpty()
@@ -202,7 +218,8 @@ class SettingsFragment : Fragment() {
                     return@setPositiveButton
                 }
                 val kind = kinds[spinner.selectedItemPosition].first
-                db.addWatchTerm(text, kind)
+                val priority = if (primaryCheck.isChecked) WatchTerm.PRIORITY_PRIMARY else WatchTerm.PRIORITY_OTHER
+                db.addWatchTerm(text, kind, priority)
                 renderTerms()
             }
             .setNegativeButton(R.string.cancel, null)

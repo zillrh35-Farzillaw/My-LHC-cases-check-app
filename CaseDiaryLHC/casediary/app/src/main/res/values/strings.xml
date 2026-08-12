@@ -1,8 +1,9 @@
 <resources>
-    <string name="app_name">Case Diary</string>
+    <string name="app_name">Zill\'s Case Diary</string>
 
     <string name="tab_cases">Cases</string>
     <string name="tab_diary">Diary</string>
+    <string name="tab_pending">Pending</string>
     <string name="tab_settings">Settings</string>
 
     <string name="ch_fixtures">Cause list alerts</string>
@@ -57,9 +58,18 @@
     <string name="scan_page">Scan page</string>
     <string name="mark_all_read">Mark all read</string>
     <string name="clear_hits">Clear all hits</string>
+    <string name="remove">Remove</string>
+    <string name="search_lists">Search checked lists</string>
+    <string name="export_pdf">Export report PDF</string>
+    <string name="add_pending">Add pending file</string>
+    <string name="pending_title_hint">Case title, e.g. Ghazanfar Ali Khan vs NADRA etc.</string>
+    <string name="pending_note_hint">Note (optional)</string>
+    <string name="empty_pending">No pending files yet.\nAdd one above — it is checked every time you scan a cause list.</string>
+    <string name="approve">Approve — mark fixed</string>
+    <string name="not_a_match">Not a match</string>
 
     <string name="settings_watch">Keywords to watch</string>
-    <string name="settings_watch_desc">Your name as it appears in cause lists, party names, and anything else worth catching. All matching is done on your phone.</string>
+    <string name="settings_watch_desc">Your name as it appears in cause lists, party names, and anything else worth catching. All matching is done on your phone. NADRA, National Database, Identity Card and Citizenship are watched by default and locked on. Long-press any keyword you add to mark it Primary.</string>
     <string name="settings_sources">Cause list pages</string>
     <string name="settings_sources_desc">Pages checked automatically. If a list needs a form filled in, use the built-in browser and Scan page instead.</string>
     <string name="settings_schedule">Automatic checking</string>

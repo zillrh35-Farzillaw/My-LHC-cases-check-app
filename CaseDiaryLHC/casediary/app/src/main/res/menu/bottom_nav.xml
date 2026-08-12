@@ -9,6 +9,10 @@
         android:icon="@drawable/ic_calendar"
         android:title="@string/tab_diary" />
     <item
+        android:id="@+id/nav_pending"
+        android:icon="@drawable/ic_pending"
+        android:title="@string/tab_pending" />
+    <item
         android:id="@+id/nav_settings"
         android:icon="@drawable/ic_settings"
         android:title="@string/tab_settings" />

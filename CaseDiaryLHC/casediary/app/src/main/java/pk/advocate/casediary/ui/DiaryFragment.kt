@@ -5,6 +5,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ListView
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -15,17 +20,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pk.advocate.casediary.databinding.FragmentDiaryBinding
+import pk.advocate.casediary.databinding.ItemDiaryApproveBinding
 import pk.advocate.casediary.databinding.ItemDiaryBinding
 import pk.advocate.casediary.databinding.ItemDiaryHeaderBinding
+import pk.advocate.casediary.databinding.ItemFixedBinding
 import pk.advocate.casediary.db.Db
+import pk.advocate.casediary.db.FixedCase
 import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Dates
-import pk.advocate.casediary.util.Prefs
+import pk.advocate.casediary.util.ReportPdf
 import pk.advocate.casediary.work.CheckWorker
 
 /**
- * One combined feed: hearings you entered yourself, plus anything the cause
- * list checker matched.
+ * One combined feed: pending-file matches awaiting approval, the fixed-cases
+ * report, hearings you entered yourself, and anything the cause list checker
+ * matched.
  */
 class DiaryFragment : Fragment() {
 
@@ -33,6 +42,7 @@ class DiaryFragment : Fragment() {
     private val b get() = _b!!
 
     private lateinit var adapter: DiaryAdapter
+    private lateinit var db: Db
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -44,13 +54,28 @@ class DiaryFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        adapter = DiaryAdapter { row ->
-            when (row) {
-                is DiaryRow.Upcoming -> openCase(row.caseId)
-                is DiaryRow.Hit -> showHit(row)
-                is DiaryRow.Header -> Unit
-            }
-        }
+        db = Db.get(requireContext())
+
+        adapter = DiaryAdapter(
+            onClick = { row ->
+                when (row) {
+                    is DiaryRow.Upcoming -> openCase(row.caseId)
+                    is DiaryRow.Hit -> showHit(row)
+                    is DiaryRow.FixedRow -> showFixed(row)
+                    else -> Unit
+                }
+            },
+            onApprove = { row -> approveDialog(row) },
+            onReject = { row ->
+                db.deleteFixture(row.fixtureId)
+                reload()
+            },
+            onRemoveHit = { row ->
+                db.deleteFixture(row.fixtureId)
+                reload()
+            },
+            onRemoveFixed = { row -> confirmRemoveFixed(row) }
+        )
         b.list.layoutManager = LinearLayoutManager(requireContext())
         b.list.adapter = adapter
 
@@ -58,6 +83,8 @@ class DiaryFragment : Fragment() {
         b.btnBrowser.setOnClickListener {
             startActivity(Intent(requireContext(), BrowserActivity::class.java))
         }
+        b.btnSearch.setOnClickListener { searchDialog() }
+        b.btnExportPdf.setOnClickListener { exportPdf() }
         b.swipe.setOnRefreshListener { runCheck() }
 
         // Long-press the status line to wipe the hit history.
@@ -70,24 +97,38 @@ class DiaryFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         reload()
-        Db.get(requireContext()).markAllFixturesSeen()
+        db.markAllFixturesSeen()
     }
 
     /**
-     * Three sections, in the order they matter on a court morning:
-     * your own cases that turned up in a list, then keyword-only matches worth
-     * a look, then the hearings you already knew about.
+     * Sections, in the order they matter on a court morning: matches that need
+     * a decision first, then the fixed-cases report, then your own saved cases
+     * that turned up, then keyword-only matches worth a look, then hearings.
      */
     private fun reload() {
-        val db = Db.get(requireContext())
-        val prefs = Prefs(requireContext())
+        val prefs = pk.advocate.casediary.util.Prefs(requireContext())
 
+        val approval = ArrayList<DiaryRow>()
         val mine = ArrayList<DiaryRow>()
         val others = ArrayList<DiaryRow>()
+        val fixedRows = ArrayList<DiaryRow>()
         val upcoming = ArrayList<DiaryRow>()
 
         for (f in db.listFixtures()) {
+            if (f.needsApproval()) {
+                approval.add(
+                    DiaryRow.Approval(
+                        fixtureId = f.id,
+                        pendingId = f.pendingId,
+                        headline = f.matchedTerm.ifBlank { "Pending file match" },
+                        detail = f.raw,
+                        whenText = Dates.fmtStamp(f.foundAt)
+                    )
+                )
+                continue
+            }
             val row = DiaryRow.Hit(
+                fixtureId = f.id,
                 badge = f.sourceLabel.ifBlank { "Cause list" },
                 whenText = Dates.fmtStamp(f.foundAt),
                 headline = f.matchedTerm.ifBlank { "Match" },
@@ -98,6 +139,20 @@ class DiaryFragment : Fragment() {
                 caseId = f.caseId
             )
             if (f.isMine()) mine.add(row) else others.add(row)
+        }
+
+        db.listFixedCases().forEachIndexed { i, fc ->
+            fixedRows.add(
+                DiaryRow.FixedRow(
+                    id = fc.id,
+                    srNo = i + 1,
+                    titleNo = fc.titleNo,
+                    court = fc.court,
+                    prayer = fc.prayer,
+                    proceedings = fc.proceedings,
+                    causelistNo = fc.causelistNo
+                )
+            )
         }
 
         // Next 14 days of hearings you entered yourself.
@@ -120,8 +175,16 @@ class DiaryFragment : Fragment() {
         }
 
         val rows = ArrayList<DiaryRow>()
+        if (approval.isNotEmpty()) {
+            rows.add(DiaryRow.Header("Needs your approval", approval.size))
+            rows.addAll(approval)
+        }
+        if (fixedRows.isNotEmpty()) {
+            rows.add(DiaryRow.Header("Fixed cases", fixedRows.size))
+            rows.addAll(fixedRows)
+        }
         if (mine.isNotEmpty()) {
-            rows.add(DiaryRow.Header("My cases fixed", mine.size))
+            rows.add(DiaryRow.Header("My saved cases — matched today", mine.size))
             rows.addAll(mine)
         }
         if (others.isNotEmpty()) {
@@ -164,7 +227,8 @@ class DiaryFragment : Fragment() {
                 val msg = when {
                     r.errors.isNotEmpty() && r.rowsScanned == 0 ->
                         "Could not read the cause lists. Try the built-in browser."
-                    r.newHits > 0 -> "${r.newHits} new match(es) found"
+                    r.newHits > 0 -> "${r.newHits} new match(es) found" +
+                        if (r.approvalHits > 0) " — ${r.approvalHits} need approval" else ""
                     r.totalHits > 0 -> "Nothing new — ${r.totalHits} already-seen match(es)"
                     else -> "No matches in ${r.rowsScanned} rows"
                 }
@@ -213,10 +277,170 @@ class DiaryFragment : Fragment() {
         dialog.show()
     }
 
+    private fun showFixed(row: DiaryRow.FixedRow) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(row.titleNo)
+            .setMessage(
+                buildString {
+                    if (row.court.isNotBlank()) append("Court: ${row.court}\n")
+                    if (row.prayer.isNotBlank()) append("Prayer / Remarks: ${row.prayer}\n")
+                    if (row.proceedings.isNotBlank()) append("Proceedings: ${row.proceedings}\n")
+                    if (row.causelistNo.isNotBlank()) append("Causelist No.: ${row.causelistNo}")
+                }
+            )
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun confirmRemoveFixed(row: DiaryRow.FixedRow) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Remove from the fixed-cases report?")
+            .setPositiveButton("Remove") { _, _ ->
+                db.deleteFixedCase(row.id)
+                reload()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Approve a pending-file match: collect the report fields, then move it into the report. */
+    private fun approveDialog(row: DiaryRow.Approval) {
+        val container = LinearLayout(requireContext())
+        container.orientation = LinearLayout.VERTICAL
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        container.setPadding(pad, pad / 2, pad, 0)
+
+        val pending = db.listPendingFiles().find { it.id == row.pendingId }
+
+        val titleInput = EditText(requireContext())
+        titleInput.hint = "Title & No. of the case"
+        titleInput.setText(pending?.title ?: row.headline)
+
+        val courtInput = EditText(requireContext())
+        courtInput.hint = "Name of the Court (e.g. Justice Asad Ali Bajwa)"
+
+        val prayerInput = EditText(requireContext())
+        prayerInput.hint = "Nature of Prayer & Remarks"
+
+        val proceedingsInput = EditText(requireContext())
+        proceedingsInput.hint = "Proceedings (e.g. First Hearing)"
+
+        val causelistInput = EditText(requireContext())
+        causelistInput.hint = "Urgent Causelist No."
+
+        for (v in listOf(titleInput, courtInput, prayerInput, proceedingsInput, causelistInput)) {
+            container.addView(v)
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Mark as fixed")
+            .setMessage(row.detail)
+            .setView(container)
+            .setPositiveButton("Save as fixed") { _, _ ->
+                val titleNo = titleInput.text?.toString()?.trim().orEmpty()
+                if (titleNo.isBlank()) {
+                    Snackbar.make(b.root, "Add the case title", Snackbar.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                db.addFixedCase(
+                    FixedCase(
+                        titleNo = titleNo,
+                        court = courtInput.text?.toString()?.trim().orEmpty(),
+                        prayer = prayerInput.text?.toString()?.trim().orEmpty(),
+                        proceedings = proceedingsInput.text?.toString()?.trim().orEmpty(),
+                        causelistNo = causelistInput.text?.toString()?.trim().orEmpty(),
+                        sourceRaw = row.detail
+                    )
+                )
+                if (row.pendingId != 0L) db.deletePendingFile(row.pendingId)
+                db.deleteFixture(row.fixtureId)
+                reload()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun searchDialog() {
+        val container = LinearLayout(requireContext())
+        container.orientation = LinearLayout.VERTICAL
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        container.setPadding(pad, pad / 2, pad, 0)
+
+        val input = EditText(requireContext())
+        input.hint = "Name, judge, Sr No., case no…"
+        val results = ListView(requireContext())
+        val resultAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_list_item_1, ArrayList<String>())
+        results.adapter = resultAdapter
+        results.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            (300 * resources.displayMetrics.density).toInt()
+        )
+
+        container.addView(input)
+        container.addView(results)
+
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Search checked lists")
+            .setMessage("Looks across every cause list you've already scanned — judge names, serial numbers, case numbers, party names — even if it isn't one of your keywords.")
+            .setView(container)
+            .setPositiveButton("Search") { _, _ -> }
+            .setNegativeButton("Close", null)
+            .create()
+
+        fun runSearch() {
+            val q = input.text?.toString()?.trim().orEmpty()
+            if (q.length < 2) {
+                resultAdapter.clear()
+                resultAdapter.add("Type at least 2 characters")
+                resultAdapter.notifyDataSetChanged()
+                return
+            }
+            val hits = db.searchScanRows(q)
+            resultAdapter.clear()
+            if (hits.isEmpty()) {
+                resultAdapter.add("No matches across ${db.scanRowCount()} checked line(s)")
+            } else {
+                for ((rowText, at) in hits) {
+                    resultAdapter.add("$rowText\n— ${Dates.fmtStamp(at)}")
+                }
+            }
+            resultAdapter.notifyDataSetChanged()
+        }
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { runSearch() }
+        }
+        dialog.show()
+    }
+
+    private fun exportPdf() {
+        try {
+            val file = ReportPdf.export(requireContext())
+            val uri = FileProvider.getUriForFile(
+                requireContext(),
+                "${requireContext().packageName}.fileprovider",
+                file
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "Share urgent cases report"))
+        } catch (e: Exception) {
+            Snackbar.make(
+                b.root,
+                "Export failed: ${e.message ?: "unknown error"}",
+                Snackbar.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private fun confirmClear() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Clear all cause list hits?")
-            .setMessage("Your cases and hearings are not touched.")
+            .setMessage("Your cases, fixed-cases report and pending files are not touched.")
             .setPositiveButton("Clear") { _, _ ->
                 Db.get(requireContext()).clearFixtures()
                 reload()
@@ -244,6 +468,7 @@ sealed class DiaryRow {
     ) : DiaryRow()
 
     data class Hit(
+        val fixtureId: Long,
         val badge: String,
         val whenText: String,
         val headline: String,
@@ -253,10 +478,33 @@ sealed class DiaryRow {
         val kind: String,
         val caseId: Long
     ) : DiaryRow()
+
+    data class Approval(
+        val fixtureId: Long,
+        val pendingId: Long,
+        val headline: String,
+        val detail: String,
+        val whenText: String
+    ) : DiaryRow()
+
+    data class FixedRow(
+        val id: Long,
+        val srNo: Int,
+        val titleNo: String,
+        val court: String,
+        val prayer: String,
+        val proceedings: String,
+        val causelistNo: String
+    ) : DiaryRow()
 }
 
-class DiaryAdapter(private val onClick: (DiaryRow) -> Unit) :
-    RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+class DiaryAdapter(
+    private val onClick: (DiaryRow) -> Unit,
+    private val onApprove: (DiaryRow.Approval) -> Unit,
+    private val onReject: (DiaryRow.Approval) -> Unit,
+    private val onRemoveHit: (DiaryRow.Hit) -> Unit,
+    private val onRemoveFixed: (DiaryRow.FixedRow) -> Unit
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = ArrayList<DiaryRow>()
 
@@ -268,16 +516,23 @@ class DiaryAdapter(private val onClick: (DiaryRow) -> Unit) :
 
     class RowVH(val b: ItemDiaryBinding) : RecyclerView.ViewHolder(b.root)
     class HeaderVH(val b: ItemDiaryHeaderBinding) : RecyclerView.ViewHolder(b.root)
+    class ApproveVH(val b: ItemDiaryApproveBinding) : RecyclerView.ViewHolder(b.root)
+    class FixedVH(val b: ItemFixedBinding) : RecyclerView.ViewHolder(b.root)
 
-    override fun getItemViewType(position: Int): Int =
-        if (items[position] is DiaryRow.Header) TYPE_HEADER else TYPE_ROW
+    override fun getItemViewType(position: Int): Int = when (items[position]) {
+        is DiaryRow.Header -> TYPE_HEADER
+        is DiaryRow.Approval -> TYPE_APPROVE
+        is DiaryRow.FixedRow -> TYPE_FIXED
+        else -> TYPE_ROW
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
-        return if (viewType == TYPE_HEADER) {
-            HeaderVH(ItemDiaryHeaderBinding.inflate(inflater, parent, false))
-        } else {
-            RowVH(ItemDiaryBinding.inflate(inflater, parent, false))
+        return when (viewType) {
+            TYPE_HEADER -> HeaderVH(ItemDiaryHeaderBinding.inflate(inflater, parent, false))
+            TYPE_APPROVE -> ApproveVH(ItemDiaryApproveBinding.inflate(inflater, parent, false))
+            TYPE_FIXED -> FixedVH(ItemFixedBinding.inflate(inflater, parent, false))
+            else -> RowVH(ItemDiaryBinding.inflate(inflater, parent, false))
         }
     }
 
@@ -296,6 +551,7 @@ class DiaryAdapter(private val onClick: (DiaryRow) -> Unit) :
                 v.b.whenText.text = row.whenText
                 v.b.headline.text = row.headline
                 bindDetail(v, row.detail)
+                v.b.removeBtn.visibility = View.GONE
                 v.b.root.setOnClickListener { onClick(row) }
             }
             is DiaryRow.Hit -> {
@@ -306,6 +562,28 @@ class DiaryAdapter(private val onClick: (DiaryRow) -> Unit) :
                 v.b.headline.text = row.headline
                 bindDetail(v, row.detail)
                 v.b.root.setOnClickListener { onClick(row) }
+                v.b.removeBtn.visibility = View.VISIBLE
+                v.b.removeBtn.setOnClickListener { onRemoveHit(row) }
+            }
+            is DiaryRow.Approval -> {
+                val v = holder as ApproveVH
+                v.b.whenText.text = row.whenText
+                v.b.headline.text = row.headline
+                v.b.detail.text = row.detail
+                v.b.btnApprove.setOnClickListener { onApprove(row) }
+                v.b.btnReject.setOnClickListener { onReject(row) }
+            }
+            is DiaryRow.FixedRow -> {
+                val v = holder as FixedVH
+                v.b.headline.text = "${row.srNo}. ${row.titleNo}"
+                v.b.detail.text = listOfNotNull(
+                    row.court.takeIf { it.isNotBlank() },
+                    row.prayer.takeIf { it.isNotBlank() },
+                    row.proceedings.takeIf { it.isNotBlank() },
+                    row.causelistNo.takeIf { it.isNotBlank() }?.let { "Causelist No. $it" }
+                ).joinToString(" · ")
+                v.b.root.setOnClickListener { onClick(row) }
+                v.b.removeBtn.setOnClickListener { onRemoveFixed(row) }
             }
         }
     }
@@ -318,5 +596,7 @@ class DiaryAdapter(private val onClick: (DiaryRow) -> Unit) :
     companion object {
         private const val TYPE_ROW = 0
         private const val TYPE_HEADER = 1
+        private const val TYPE_APPROVE = 2
+        private const val TYPE_FIXED = 3
     }
 }

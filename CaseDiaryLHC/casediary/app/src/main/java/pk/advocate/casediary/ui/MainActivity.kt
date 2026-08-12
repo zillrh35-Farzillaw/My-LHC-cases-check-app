@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.nav_cases -> show(TAB_CASES)
                 R.id.nav_diary -> show(TAB_DIARY)
+                R.id.nav_pending -> show(TAB_PENDING)
                 R.id.nav_settings -> show(TAB_SETTINGS)
                 else -> false
             }
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private fun selectTab(tab: String) {
         b.bottomNav.selectedItemId = when (tab) {
             TAB_DIARY -> R.id.nav_diary
+            TAB_PENDING -> R.id.nav_pending
             TAB_SETTINGS -> R.id.nav_settings
             else -> R.id.nav_cases
         }
@@ -57,6 +59,7 @@ class MainActivity : AppCompatActivity() {
         currentTab = tab
         val fragment: Fragment = when (tab) {
             TAB_DIARY -> DiaryFragment()
+            TAB_PENDING -> PendingFragment()
             TAB_SETTINGS -> SettingsFragment()
             else -> CasesFragment()
         }
@@ -66,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
         b.toolbar.title = when (tab) {
             TAB_DIARY -> getString(R.string.tab_diary)
+            TAB_PENDING -> getString(R.string.tab_pending)
             TAB_SETTINGS -> getString(R.string.tab_settings)
             else -> getString(R.string.app_name)
         }
@@ -82,6 +86,7 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_OPEN_TAB = "open_tab"
         const val TAB_CASES = "cases"
         const val TAB_DIARY = "diary"
+        const val TAB_PENDING = "pending"
         const val TAB_SETTINGS = "settings"
     }
 }

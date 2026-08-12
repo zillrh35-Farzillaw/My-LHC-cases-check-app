@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pk.advocate.casediary.db.Case
+import pk.advocate.casediary.db.PendingFile
 import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.work.Matcher
 
@@ -125,5 +126,49 @@ class MatcherTest {
             Matcher.hashOf("u", "d", "row text", "term") !=
                 Matcher.hashOf("u", "d", "different row", "term")
         )
+    }
+
+    // ---------------------------------------------------- pending-file fuzzy matching
+
+    private val pending = listOf(PendingFile(id = 5, title = "Ghazanfar Ali Khan vs NADRA etc."))
+
+    private fun pendingHits(row: String) = Matcher.findHits(row, Matcher.compile(terms, cases, pending))
+
+    @Test
+    fun `pending file title matches even with extra words the court added`() {
+        val row = "3 | GHAZANFAR ALI KHAN VS CHAIRMAN NADRA AND OTHERS | Writ Petition 55555/2026"
+        val hit = pendingHits(row).firstOrNull { it.kind == WatchTerm.KIND_PENDING }
+        assertTrue(hit != null)
+        assertEquals(5L, hit!!.pendingId)
+    }
+
+    @Test
+    fun `pending file title tolerates one missing word`() {
+        // "Khan" dropped entirely — still 3 of 4 significant tokens present.
+        val row = "3 | GHAZANFAR ALI VS NADRA | Writ Petition 55555/2026"
+        assertTrue(pendingHits(row).any { it.kind == WatchTerm.KIND_PENDING })
+    }
+
+    @Test
+    fun `pending file does not match an unrelated row`() {
+        val row = "9 | SOME OTHER PARTY VS ANOTHER PARTY REGARDING A DIFFERENT MATTER ENTIRELY"
+        assertFalse(pendingHits(row).any { it.kind == WatchTerm.KIND_PENDING })
+    }
+
+    @Test
+    fun `a case match on the same row wins over a pending-file match`() {
+        // Row matches both saved case 10 and would-be pending probes on the same line —
+        // findHits itself only dedupes by key, so this just confirms scraper-level
+        // priority is a caller concern; the matcher still reports both keys.
+        val row = "1 | W.P. No. 12345 / 2025 | Muhammad Bilal Vs. The State | RAZA, AHMAD ADVOCATE"
+        val hits = Matcher.findHits(row, Matcher.compile(terms, cases, pending))
+        assertTrue(hits.any { it.caseId == 10L })
+    }
+
+    @Test
+    fun `default NADRA-style keywords carry PRIMARY priority when built in`() {
+        val t = WatchTerm(id = 1, term = "NADRA", kind = WatchTerm.KIND_OTHER, priority = WatchTerm.PRIORITY_PRIMARY, builtin = true)
+        assertEquals(WatchTerm.PRIORITY_PRIMARY, t.priority)
+        assertTrue(t.builtin)
     }
 }

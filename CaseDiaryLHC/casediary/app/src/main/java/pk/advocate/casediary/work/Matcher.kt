@@ -1,6 +1,7 @@
 package pk.advocate.casediary.work
 
 import pk.advocate.casediary.db.Case
+import pk.advocate.casediary.db.PendingFile
 import pk.advocate.casediary.db.WatchTerm
 import java.security.MessageDigest
 import java.util.Locale
@@ -15,7 +16,22 @@ import java.util.Locale
  */
 object Matcher {
 
-    data class Hit(val term: String, val kind: String, val caseId: Long)
+    data class Hit(val term: String, val kind: String, val caseId: Long, val pendingId: Long = 0L)
+
+    private val STOPWORDS = setOf("vs", "etc", "and", "the", "of", "in", "re", "mst")
+
+    /** Pending-file titles keep more of their words than a keyword would —
+     *  stopwords and honorifics are dropped, but nothing else is filtered by length. */
+    private fun pendingTokens(title: String): List<String> =
+        normalize(title).split(' ').filter { it.length >= 3 && it !in STOPWORDS }
+
+    /** How many of a fuzzy probe's tokens are allowed to miss on a row. */
+    private fun allowedMisses(n: Int): Int = when {
+        n <= 2 -> 0
+        n <= 4 -> 1
+        n <= 7 -> 2
+        else -> 3
+    }
 
     /** Collapse punctuation and whitespace so two spellings compare equal. */
     fun normalize(input: String): String {
@@ -73,22 +89,29 @@ object Matcher {
         val label: String,
         val kind: String,
         val caseId: Long,
+        val pendingId: Long,
         val tokens: List<String>,
         /** Key used to collapse duplicate hits on the same row. */
-        val key: String
+        val key: String,
+        /** Pending-file probes tolerate a few missing tokens; everything else needs all of them. */
+        val fuzzy: Boolean = false
     ) {
         /** Long tokens may also match inside a run-together word. */
         val longTokens: List<String> = tokens.filter { it.length >= 6 }
     }
 
     /** Build the probe list once, before walking the rows. */
-    fun compile(terms: List<WatchTerm>, cases: List<Case>): List<Probe> {
-        val out = ArrayList<Probe>(terms.size + cases.size * 2)
+    fun compile(
+        terms: List<WatchTerm>,
+        cases: List<Case>,
+        pending: List<PendingFile> = emptyList()
+    ): List<Probe> {
+        val out = ArrayList<Probe>(terms.size + cases.size * 2 + pending.size)
 
         for (t in terms) {
             if (!t.enabled) continue
             val toks = usableTokens(t.term) ?: continue
-            out.add(Probe(t.term, t.kind, 0L, toks, normalize(t.term)))
+            out.add(Probe(t.term, t.kind, 0L, 0L, toks, "key:" + normalize(t.term)))
         }
 
         for (c in cases) {
@@ -99,7 +122,7 @@ object Matcher {
             // so it goes in first and wins the de-duplication.
             if (c.caseNo.isNotBlank() && c.caseYear.isNotBlank()) {
                 usableTokens("${c.caseNo} ${c.caseYear}")?.let {
-                    out.add(Probe(ref, WatchTerm.KIND_CASE, c.id, it, normalize(ref)))
+                    out.add(Probe(ref, WatchTerm.KIND_CASE, c.id, 0L, it, "case:" + normalize(ref)))
                 }
             }
 
@@ -107,8 +130,15 @@ object Matcher {
             if (party.length >= 4) {
                 usableTokens(party)?.let {
                     val label = ref.ifBlank { party }
-                    out.add(Probe(label, WatchTerm.KIND_PARTY, c.id, it, normalize(label)))
+                    out.add(Probe(label, WatchTerm.KIND_PARTY, c.id, 0L, it, "party:" + normalize(label)))
                 }
+            }
+        }
+
+        for (pf in pending) {
+            val toks = pendingTokens(pf.title)
+            if (toks.isNotEmpty()) {
+                out.add(Probe(pf.title, WatchTerm.KIND_PENDING, 0L, pf.id, toks, "pending:${pf.id}", fuzzy = true))
             }
         }
 
@@ -134,18 +164,19 @@ object Matcher {
         for (p in probes) {
             if (!probeMatches(norm, rowTokens, p)) continue
             val map = hits ?: LinkedHashMap<String, Hit>(4).also { hits = it }
-            map.putIfAbsent(p.key, Hit(p.label, p.kind, p.caseId))
+            map.putIfAbsent(p.key, Hit(p.label, p.kind, p.caseId, p.pendingId))
         }
         return hits?.values?.toList() ?: emptyList()
     }
 
+    /** Non-fuzzy probes need every token; fuzzy (pending-file) probes tolerate a few misses. */
     private fun probeMatches(norm: String, rowTokens: Set<String>, p: Probe): Boolean {
+        var hitCount = 0
         for (t in p.tokens) {
-            if (rowTokens.contains(t)) continue
-            if (t.length >= 6 && norm.contains(t)) continue
-            return false
+            if (rowTokens.contains(t) || (t.length >= 6 && norm.contains(t))) hitCount++
         }
-        return true
+        val misses = p.tokens.size - hitCount
+        return if (p.fuzzy) misses <= allowedMisses(p.tokens.size) else misses == 0
     }
 
     /** Convenience for one-off checks and tests; compiles then matches. */

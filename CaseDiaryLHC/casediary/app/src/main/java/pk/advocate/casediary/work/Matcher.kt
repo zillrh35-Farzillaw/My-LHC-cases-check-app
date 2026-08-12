@@ -94,7 +94,9 @@ object Matcher {
         /** Key used to collapse duplicate hits on the same row. */
         val key: String,
         /** Pending-file probes tolerate a few missing tokens; everything else needs all of them. */
-        val fuzzy: Boolean = false
+        val fuzzy: Boolean = false,
+        /** For fuzzy probes: this title's own rare words, which must always be present. */
+        val mustMatch: Set<String> = emptySet()
     ) {
         /** Long tokens may also match inside a run-together word. */
         val longTokens: List<String> = tokens.filter { it.length >= 6 }
@@ -135,11 +137,21 @@ object Matcher {
             }
         }
 
+        // Words like "Khan", "Chairman" or "NADRA" repeat across dozens of pending
+        // titles — tolerating a miss on those is fine, but a title must never match
+        // purely on words it shares with every other file. Each title's own rare
+        // words (appearing in at most 2 pending titles) must always be present;
+        // only the common words it shares with many other titles may be missed.
+        val freq = HashMap<String, Int>()
+        for (pf in pending) {
+            for (tok in pendingTokens(pf.title).toHashSet()) freq[tok] = (freq[tok] ?: 0) + 1
+        }
         for (pf in pending) {
             val toks = pendingTokens(pf.title)
-            if (toks.isNotEmpty()) {
-                out.add(Probe(pf.title, WatchTerm.KIND_PENDING, 0L, pf.id, toks, "pending:${pf.id}", fuzzy = true))
-            }
+            if (toks.isEmpty()) continue
+            var mustMatch = toks.filter { (freq[it] ?: 0) <= 2 }.toHashSet()
+            if (mustMatch.isEmpty()) mustMatch = hashSetOf(toks[0])
+            out.add(Probe(pf.title, WatchTerm.KIND_PENDING, 0L, pf.id, toks, "pending:${pf.id}", fuzzy = true, mustMatch = mustMatch))
         }
 
         return out
@@ -169,14 +181,20 @@ object Matcher {
         return hits?.values?.toList() ?: emptyList()
     }
 
-    /** Non-fuzzy probes need every token; fuzzy (pending-file) probes tolerate a few misses. */
+    private fun tokenPresent(norm: String, rowTokens: Set<String>, t: String): Boolean =
+        rowTokens.contains(t) || (t.length >= 6 && norm.contains(t))
+
+    /** Non-fuzzy probes need every token; fuzzy (pending-file) probes tolerate a few misses
+     *  of their common words, but never of their distinctive (mustMatch) words. */
     private fun probeMatches(norm: String, rowTokens: Set<String>, p: Probe): Boolean {
         var hitCount = 0
         for (t in p.tokens) {
-            if (rowTokens.contains(t) || (t.length >= 6 && norm.contains(t))) hitCount++
+            if (tokenPresent(norm, rowTokens, t)) hitCount++
         }
         val misses = p.tokens.size - hitCount
-        return if (p.fuzzy) misses <= allowedMisses(p.tokens.size) else misses == 0
+        if (!p.fuzzy) return misses == 0
+        if (misses > allowedMisses(p.tokens.size)) return false
+        return p.mustMatch.all { tokenPresent(norm, rowTokens, it) }
     }
 
     /** Convenience for one-off checks and tests; compiles then matches. */

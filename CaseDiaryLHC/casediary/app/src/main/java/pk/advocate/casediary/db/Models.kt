@@ -141,5 +141,7 @@ data class FixedCase(
     var proceedings: String = "",
     var causelistNo: String = "",
     var fixedDate: Long = 0L,
-    var sourceRaw: String = ""
+    var sourceRaw: String = "",
+    /** 0 unless this came from (and links back to) a case saved in the Cases tab. */
+    var caseId: Long = 0
 )

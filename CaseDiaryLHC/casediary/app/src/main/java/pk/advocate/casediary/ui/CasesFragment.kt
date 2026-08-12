@@ -93,12 +93,12 @@ class CasesFragment : Fragment() {
         val status = statusFilter
         val q = query
         viewLifecycleOwner.lifecycleScope.launch {
-            val cases = withContext(Dispatchers.IO) {
-                Db.get(appContext).listCases(status, q)
-            }
+            val db = Db.get(appContext)
+            val cases = withContext(Dispatchers.IO) { db.listCases(status, q) }
+            val fixedIds = withContext(Dispatchers.IO) { db.fixedCaseIds() }
             // The user may have typed on, or navigated away, while we queried.
             if (_b == null || status != statusFilter || q != query) return@launch
-            adapter.submit(cases)
+            adapter.submit(cases, fixedIds)
             b.empty.visibility = if (cases.isEmpty()) View.VISIBLE else View.GONE
         }
     }
@@ -119,10 +119,12 @@ class CaseAdapter(private val onClick: (Case) -> Unit) :
     RecyclerView.Adapter<CaseAdapter.VH>() {
 
     private val items = ArrayList<Case>()
+    private var fixedCaseIds: Set<Long> = emptySet()
 
-    fun submit(list: List<Case>) {
+    fun submit(list: List<Case>, fixedIds: Set<Long> = fixedCaseIds) {
         items.clear()
         items.addAll(list)
+        fixedCaseIds = fixedIds
         notifyDataSetChanged()
     }
 
@@ -145,6 +147,7 @@ class CaseAdapter(private val onClick: (Case) -> Unit) :
         if (c.judge.isNotBlank()) bits.add(c.judge)
         if (c.stage.isNotBlank()) bits.add(c.stage)
         if (c.clientName.isNotBlank()) bits.add("Client: ${c.clientName}")
+        if (fixedCaseIds.contains(c.id)) bits.add("✓ Fixed in cause list")
         holder.b.meta.text = bits.joinToString(" · ")
         holder.b.meta.visibility = if (bits.isEmpty()) View.GONE else View.VISIBLE
 

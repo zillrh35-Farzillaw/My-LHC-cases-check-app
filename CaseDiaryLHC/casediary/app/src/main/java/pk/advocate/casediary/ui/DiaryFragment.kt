@@ -32,9 +32,12 @@ import pk.advocate.casediary.util.ReportPdf
 import pk.advocate.casediary.work.CheckWorker
 
 /**
- * One combined feed: pending-file matches awaiting approval, the fixed-cases
- * report, hearings you entered yourself, and anything the cause list checker
- * matched.
+ * One combined feed: pending-file matches, the fixed-cases report (= "My
+ * Cases directory"), hearings you entered yourself, and everything the cause
+ * list checker matched. Every match — whichever section it's in — has a
+ * "Save to My Cases" action, so any result the lawyer confirms is theirs
+ * lands in the same exportable place, linked back to a saved Case when there
+ * is one.
  */
 class DiaryFragment : Fragment() {
 
@@ -43,6 +46,10 @@ class DiaryFragment : Fragment() {
 
     private lateinit var adapter: DiaryAdapter
     private lateinit var db: Db
+
+    /** Transient (not persisted) selection state for bulk actions. */
+    private val selectedHits = HashSet<Long>()
+    private val selectedFixed = HashSet<Long>()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -61,20 +68,31 @@ class DiaryFragment : Fragment() {
                 when (row) {
                     is DiaryRow.Upcoming -> openCase(row.caseId)
                     is DiaryRow.Hit -> showHit(row)
-                    is DiaryRow.FixedRow -> showFixed(row)
+                    is DiaryRow.FixedRow -> editFixedDialog(row.id)
                     else -> Unit
                 }
             },
-            onApprove = { row -> approveDialog(row) },
+            onApprove = { row -> saveDialog(row.fixtureId) },
             onReject = { row ->
                 db.deleteFixture(row.fixtureId)
                 reload()
             },
+            onSaveHit = { row -> saveDialog(row.fixtureId) },
             onRemoveHit = { row ->
                 db.deleteFixture(row.fixtureId)
+                selectedHits.remove(row.fixtureId)
                 reload()
             },
-            onRemoveFixed = { row -> confirmRemoveFixed(row) }
+            onToggleHitSelect = { id ->
+                if (!selectedHits.add(id)) selectedHits.remove(id)
+                reload()
+            },
+            onToggleFixedSelect = { id ->
+                if (!selectedFixed.add(id)) selectedFixed.remove(id)
+                reload()
+            },
+            isHitSelected = { selectedHits.contains(it) },
+            isFixedSelected = { selectedFixed.contains(it) }
         )
         b.list.layoutManager = LinearLayoutManager(requireContext())
         b.list.adapter = adapter
@@ -85,6 +103,7 @@ class DiaryFragment : Fragment() {
         }
         b.btnSearch.setOnClickListener { searchDialog() }
         b.btnExportPdf.setOnClickListener { exportPdf() }
+        b.btnSaveSelected.setOnClickListener { saveSelectedHits() }
         b.swipe.setOnRefreshListener { runCheck() }
 
         // Long-press the status line to wipe the hit history.
@@ -100,11 +119,6 @@ class DiaryFragment : Fragment() {
         db.markAllFixturesSeen()
     }
 
-    /**
-     * Sections, in the order they matter on a court morning: matches that need
-     * a decision first, then the fixed-cases report, then your own saved cases
-     * that turned up, then keyword-only matches worth a look, then hearings.
-     */
     private fun reload() {
         val prefs = pk.advocate.casediary.util.Prefs(requireContext())
 
@@ -155,7 +169,6 @@ class DiaryFragment : Fragment() {
             )
         }
 
-        // Next 14 days of hearings you entered yourself.
         val from = Dates.todayStart()
         val to = Dates.endOfDay(Dates.plusDays(from, 14))
         for (c in db.casesBetween(from, to)) {
@@ -180,7 +193,7 @@ class DiaryFragment : Fragment() {
             rows.addAll(approval)
         }
         if (fixedRows.isNotEmpty()) {
-            rows.add(DiaryRow.Header("Fixed cases", fixedRows.size))
+            rows.add(DiaryRow.Header("Fixed cases — My Cases directory", fixedRows.size))
             rows.addAll(fixedRows)
         }
         if (mine.isNotEmpty()) {
@@ -200,6 +213,19 @@ class DiaryFragment : Fragment() {
         b.empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         b.status.text = "Last check: ${Dates.fmtStamp(prefs.lastCheckAt)}" +
             if (prefs.lastCheckResult.isBlank()) "" else " — ${prefs.lastCheckResult}"
+
+        b.btnExportPdf.text = if (selectedFixed.isNotEmpty()) {
+            "Export ${selectedFixed.size} selected as PDF"
+        } else {
+            "Export report PDF"
+        }
+
+        if (selectedHits.isNotEmpty()) {
+            b.btnSaveSelected.visibility = View.VISIBLE
+            b.btnSaveSelected.text = "Save ${selectedHits.size} selected to My Cases"
+        } else {
+            b.btnSaveSelected.visibility = View.GONE
+        }
     }
 
     private fun kindLabel(kind: String): String = when (kind) {
@@ -263,12 +289,7 @@ class DiaryFragment : Fragment() {
                     append("\n\nFound: ${row.whenText}")
                 }
             )
-            .setPositiveButton("Open page") { _, _ ->
-                startActivity(
-                    Intent(requireContext(), BrowserActivity::class.java)
-                        .putExtra(BrowserActivity.EXTRA_URL, row.url)
-                )
-            }
+            .setPositiveButton("Save to My Cases") { _, _ -> saveDialog(row.fixtureId) }
             .setNegativeButton("Close", null)
 
         if (row.caseId != 0L) {
@@ -277,66 +298,40 @@ class DiaryFragment : Fragment() {
         dialog.show()
     }
 
-    private fun showFixed(row: DiaryRow.FixedRow) {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(row.titleNo)
-            .setMessage(
-                buildString {
-                    if (row.court.isNotBlank()) append("Court: ${row.court}\n")
-                    if (row.prayer.isNotBlank()) append("Prayer / Remarks: ${row.prayer}\n")
-                    if (row.proceedings.isNotBlank()) append("Proceedings: ${row.proceedings}\n")
-                    if (row.causelistNo.isNotBlank()) append("Causelist No.: ${row.causelistNo}")
-                }
-            )
-            .setPositiveButton("Close", null)
-            .show()
-    }
+    /** Save any fixture (approval, mine, or keyword-only) into the Fixed-cases report. */
+    private fun saveDialog(fixtureId: Long) {
+        val f = db.listFixtures().find { it.id == fixtureId } ?: return
+        val pending = if (f.pendingId != 0L) db.listPendingFiles().find { it.id == f.pendingId } else null
+        val savedCase = if (f.caseId != 0L) db.getCase(f.caseId) else null
+        val defaultTitle = pending?.title
+            ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
+            ?: f.matchedTerm
 
-    private fun confirmRemoveFixed(row: DiaryRow.FixedRow) {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Remove from the fixed-cases report?")
-            .setPositiveButton("Remove") { _, _ ->
-                db.deleteFixedCase(row.id)
-                reload()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    /** Approve a pending-file match: collect the report fields, then move it into the report. */
-    private fun approveDialog(row: DiaryRow.Approval) {
         val container = LinearLayout(requireContext())
         container.orientation = LinearLayout.VERTICAL
         val pad = (16 * resources.displayMetrics.density).toInt()
         container.setPadding(pad, pad / 2, pad, 0)
 
-        val pending = db.listPendingFiles().find { it.id == row.pendingId }
-
         val titleInput = EditText(requireContext())
         titleInput.hint = "Title & No. of the case"
-        titleInput.setText(pending?.title ?: row.headline)
-
+        titleInput.setText(defaultTitle)
         val courtInput = EditText(requireContext())
         courtInput.hint = "Name of the Court (e.g. Justice Asad Ali Bajwa)"
-
         val prayerInput = EditText(requireContext())
         prayerInput.hint = "Nature of Prayer & Remarks"
-
         val proceedingsInput = EditText(requireContext())
         proceedingsInput.hint = "Proceedings (e.g. First Hearing)"
-
         val causelistInput = EditText(requireContext())
         causelistInput.hint = "Urgent Causelist No."
-
         for (v in listOf(titleInput, courtInput, prayerInput, proceedingsInput, causelistInput)) {
             container.addView(v)
         }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Mark as fixed")
-            .setMessage(row.detail)
+            .setTitle("Save to My Cases")
+            .setMessage(f.raw)
             .setView(container)
-            .setPositiveButton("Save as fixed") { _, _ ->
+            .setPositiveButton("Save") { _, _ ->
                 val titleNo = titleInput.text?.toString()?.trim().orEmpty()
                 if (titleNo.isBlank()) {
                     Snackbar.make(b.root, "Add the case title", Snackbar.LENGTH_SHORT).show()
@@ -349,11 +344,83 @@ class DiaryFragment : Fragment() {
                         prayer = prayerInput.text?.toString()?.trim().orEmpty(),
                         proceedings = proceedingsInput.text?.toString()?.trim().orEmpty(),
                         causelistNo = causelistInput.text?.toString()?.trim().orEmpty(),
-                        sourceRaw = row.detail
+                        sourceRaw = f.raw,
+                        caseId = f.caseId
                     )
                 )
-                if (row.pendingId != 0L) db.deletePendingFile(row.pendingId)
-                db.deleteFixture(row.fixtureId)
+                if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
+                db.deleteFixture(f.id)
+                selectedHits.remove(f.id)
+                reload()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Bulk version — skips the per-item form; details can be added later by tapping the row. */
+    private fun saveSelectedHits() {
+        if (selectedHits.isEmpty()) return
+        val fixtures = db.listFixtures()
+        for (id in HashSet(selectedHits)) {
+            val f = fixtures.find { it.id == id } ?: continue
+            val pending = if (f.pendingId != 0L) db.listPendingFiles().find { it.id == f.pendingId } else null
+            val savedCase = if (f.caseId != 0L) db.getCase(f.caseId) else null
+            val titleNo = pending?.title
+                ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
+                ?: f.matchedTerm
+            db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.raw, caseId = f.caseId))
+            if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
+            db.deleteFixture(f.id)
+        }
+        selectedHits.clear()
+        reload()
+    }
+
+    private fun editFixedDialog(id: Long) {
+        val f = db.listFixedCases().find { it.id == id } ?: return
+        val container = LinearLayout(requireContext())
+        container.orientation = LinearLayout.VERTICAL
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        container.setPadding(pad, pad / 2, pad, 0)
+
+        val titleInput = EditText(requireContext())
+        titleInput.setText(f.titleNo)
+        val courtInput = EditText(requireContext())
+        courtInput.hint = "Name of the Court"
+        courtInput.setText(f.court)
+        val prayerInput = EditText(requireContext())
+        prayerInput.hint = "Nature of Prayer & Remarks"
+        prayerInput.setText(f.prayer)
+        val proceedingsInput = EditText(requireContext())
+        proceedingsInput.hint = "Proceedings"
+        proceedingsInput.setText(f.proceedings)
+        val causelistInput = EditText(requireContext())
+        causelistInput.hint = "Urgent Causelist No."
+        causelistInput.setText(f.causelistNo)
+        for (v in listOf(titleInput, courtInput, prayerInput, proceedingsInput, causelistInput)) {
+            container.addView(v)
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Edit case in My Cases")
+            .setView(container)
+            .setPositiveButton("Save") { _, _ ->
+                val titleNo = titleInput.text?.toString()?.trim().orEmpty()
+                if (titleNo.isBlank()) {
+                    Snackbar.make(b.root, "Add the case title", Snackbar.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                f.titleNo = titleNo
+                f.court = courtInput.text?.toString()?.trim().orEmpty()
+                f.prayer = prayerInput.text?.toString()?.trim().orEmpty()
+                f.proceedings = proceedingsInput.text?.toString()?.trim().orEmpty()
+                f.causelistNo = causelistInput.text?.toString()?.trim().orEmpty()
+                db.updateFixedCase(f)
+                reload()
+            }
+            .setNeutralButton("Remove") { _, _ ->
+                db.deleteFixedCase(id)
+                selectedFixed.remove(id)
                 reload()
             }
             .setNegativeButton("Cancel", null)
@@ -415,7 +482,7 @@ class DiaryFragment : Fragment() {
 
     private fun exportPdf() {
         try {
-            val file = ReportPdf.export(requireContext())
+            val file = ReportPdf.export(requireContext(), selectedFixed)
             val uri = FileProvider.getUriForFile(
                 requireContext(),
                 "${requireContext().packageName}.fileprovider",
@@ -443,6 +510,7 @@ class DiaryFragment : Fragment() {
             .setMessage("Your cases, fixed-cases report and pending files are not touched.")
             .setPositiveButton("Clear") { _, _ ->
                 Db.get(requireContext()).clearFixtures()
+                selectedHits.clear()
                 reload()
             }
             .setNegativeButton("Cancel", null)
@@ -502,8 +570,12 @@ class DiaryAdapter(
     private val onClick: (DiaryRow) -> Unit,
     private val onApprove: (DiaryRow.Approval) -> Unit,
     private val onReject: (DiaryRow.Approval) -> Unit,
+    private val onSaveHit: (DiaryRow.Hit) -> Unit,
     private val onRemoveHit: (DiaryRow.Hit) -> Unit,
-    private val onRemoveFixed: (DiaryRow.FixedRow) -> Unit
+    private val onToggleHitSelect: (Long) -> Unit,
+    private val onToggleFixedSelect: (Long) -> Unit,
+    private val isHitSelected: (Long) -> Boolean,
+    private val isFixedSelected: (Long) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = ArrayList<DiaryRow>()
@@ -551,7 +623,7 @@ class DiaryAdapter(
                 v.b.whenText.text = row.whenText
                 v.b.headline.text = row.headline
                 bindDetail(v, row.detail)
-                v.b.removeBtn.visibility = View.GONE
+                v.b.actionRow.visibility = View.GONE
                 v.b.root.setOnClickListener { onClick(row) }
             }
             is DiaryRow.Hit -> {
@@ -559,11 +631,13 @@ class DiaryAdapter(
                 v.b.badge.text = row.badge
                 v.b.whenText.text =
                     if (row.kind.isBlank()) row.whenText else "${row.kind} · ${row.whenText}"
-                v.b.headline.text = row.headline
+                v.b.headline.text = if (isHitSelected(row.fixtureId)) "☑ ${row.headline}" else row.headline
                 bindDetail(v, row.detail)
-                v.b.root.setOnClickListener { onClick(row) }
-                v.b.removeBtn.visibility = View.VISIBLE
-                v.b.removeBtn.setOnClickListener { onRemoveHit(row) }
+                v.b.root.setOnClickListener { onToggleHitSelect(row.fixtureId) }
+                v.b.root.setOnLongClickListener { onClick(row); true }
+                v.b.actionRow.visibility = View.VISIBLE
+                v.b.saveBtn.setOnClickListener { onSaveHit(row) }
+                v.b.removeBtn2.setOnClickListener { onRemoveHit(row) }
             }
             is DiaryRow.Approval -> {
                 val v = holder as ApproveVH
@@ -575,7 +649,8 @@ class DiaryAdapter(
             }
             is DiaryRow.FixedRow -> {
                 val v = holder as FixedVH
-                v.b.headline.text = "${row.srNo}. ${row.titleNo}"
+                val mark = if (isFixedSelected(row.id)) "☑" else "☐"
+                v.b.headline.text = "$mark ${row.srNo}. ${row.titleNo}"
                 v.b.detail.text = listOfNotNull(
                     row.court.takeIf { it.isNotBlank() },
                     row.prayer.takeIf { it.isNotBlank() },
@@ -583,7 +658,9 @@ class DiaryAdapter(
                     row.causelistNo.takeIf { it.isNotBlank() }?.let { "Causelist No. $it" }
                 ).joinToString(" · ")
                 v.b.root.setOnClickListener { onClick(row) }
-                v.b.removeBtn.setOnClickListener { onRemoveFixed(row) }
+                v.b.root.setOnLongClickListener { onToggleFixedSelect(row.id); true }
+                v.b.removeBtn.text = "Select for export"
+                v.b.removeBtn.setOnClickListener { onToggleFixedSelect(row.id) }
             }
         }
     }

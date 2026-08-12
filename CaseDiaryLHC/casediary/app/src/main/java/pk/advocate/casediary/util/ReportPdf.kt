@@ -23,9 +23,11 @@ object ReportPdf {
     private const val PAGE_H = 842
     private const val MARGIN = 32f
 
-    fun export(context: Context): File {
+    /** @param selectedIds when non-empty, only these fixed cases go into the report — otherwise all of them do. */
+    fun export(context: Context, selectedIds: Set<Long> = emptySet()): File {
         val db = Db.get(context)
-        val fixed = db.listFixedCases()
+        val allFixed = db.listFixedCases()
+        val fixed = if (selectedIds.isEmpty()) allFixed else allFixed.filter { selectedIds.contains(it.id) }
         val pending = db.listPendingFiles()
 
         val doc = PdfDocument()

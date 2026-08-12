@@ -68,17 +68,35 @@
             android:textSize="12sp"
             android:textColor="@color/text_secondary" />
 
-        <TextView
-            android:id="@+id/removeBtn"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/actionRow"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:layout_marginTop="6dp"
-            android:padding="4dp"
-            android:text="@string/remove"
-            android:textSize="11sp"
-            android:textColor="@color/text_secondary"
-            android:visibility="gone" />
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:visibility="gone">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/saveBtn"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="11sp"
+                android:text="Save to My Cases" />
+
+            <Space android:layout_width="8dp" android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/removeBtn2"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:textColor="@color/danger"
+                android:textSize="11sp"
+                android:text="@string/remove" />
+        </LinearLayout>
 
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

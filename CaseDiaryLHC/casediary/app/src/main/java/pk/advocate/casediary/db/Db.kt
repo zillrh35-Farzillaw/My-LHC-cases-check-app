@@ -116,7 +116,8 @@ class Db private constructor(context: Context) :
                 proceedings TEXT NOT NULL DEFAULT '',
                 causelist_no TEXT NOT NULL DEFAULT '',
                 fixed_date INTEGER NOT NULL DEFAULT 0,
-                source_raw TEXT NOT NULL DEFAULT ''
+                source_raw TEXT NOT NULL DEFAULT '',
+                case_id INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -133,6 +134,7 @@ class Db private constructor(context: Context) :
         createIndexes(db)
         seedSources(db)
         seedDefaultKeywords(db)
+        seedDefaultPending(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -191,6 +193,12 @@ class Db private constructor(context: Context) :
             )
             seedDefaultKeywords(db)
         }
+        if (oldVersion < 4) {
+            try {
+                db.execSQL("ALTER TABLE fixed_cases ADD COLUMN case_id INTEGER NOT NULL DEFAULT 0")
+            } catch (_: Exception) { /* already present */ }
+            seedDefaultPending(db)
+        }
         createIndexes(db)
     }
 
@@ -231,6 +239,103 @@ class Db private constructor(context: Context) :
                 put("builtin", 1)
             }
             db.insert("watch_terms", null, cv)
+        }
+    }
+
+
+    /**
+     * The 73 files supplied as "pending / yet to be fixed" -- seeded once,
+     * verbatim from the lawyer's own document, so they are being checked from
+     * day one. Idempotent: skips any title already present.
+     */
+    private fun seedDefaultPending(db: SQLiteDatabase) {
+        val defaults = listOf(
+            "Ali Ahmad vs FOP etc." to "",
+            "Salikha Bibi vs GOP etc." to "",
+            "Ghazanfar Ali Khan vs NADRA etc." to "",
+            "Mubeen vs DG NADRA etc." to "",
+            "Awais Ali vs NADRA etc." to "",
+            "Syed Wasif Abbas Zaidi vs NADRA etc." to "",
+            "Muhammad Qamar etc. vs Amir Nadeem Najami, AD Operations etc." to "",
+            "Maqbool vs Chairman NADRA etc." to "",
+            "Bibi Tareena vs FOP etc." to "",
+            "Gulnaz Bibi Vs GOP." to "",
+            "Mst. Maryam Bibi Vs NADRA etc." to "",
+            "Shahid Mehmood Vs FOP." to "",
+            "Ghulam Ghous Vs DG Immigration etc." to "",
+            "Muhammad Aamir Vs FOP etc." to "",
+            "Abdul Rehman Vs NADRA etc." to "",
+            "Khalil Ahmad Vs NADRA etc." to "",
+            "Abdul Mateen vs NADRA etc" to "Never fixed or filed in High Court (precautionary), Important case, might fix in future.",
+            "Mst. Salma Bibi vs NADRA etc." to "",
+            "Noreen vs NADRA Lahore etc." to "",
+            "Arshad Ali vs FOP etc." to "",
+            "Asma Yousaf vs Public at Large etc." to "",
+            "Irfan Islam vs GOP etc." to "",
+            "Sajjad vs FOP etc." to "",
+            "Multan Khan vs Chairman NADRA etc." to "",
+            "Sultan Zari vs Chairman NADRA etc." to "",
+            "Waqar Ahmad vs NADRA etc." to "",
+            "Muhammad Ali vs GOP etc." to "",
+            "Sajan vs DG NADRA etc." to "",
+            "Muhammad Usman vs DG NADRA etc." to "",
+            "Naseer Khan Vs Chairman NADRA etc." to "",
+            "Muhammad Anwar Khan vs FOP etc." to "",
+            "Nasira Kousar vs GOP etc." to "",
+            "Syed Asim Abbas Rizvi vs GOP etc." to "",
+            "Muhammad Rafique vs Chairman NADRA etc." to "",
+            "Aziz Khan Vs Chairman NADRA et." to "",
+            "Muhammad Shahid Hussain Vs FOP etc." to "",
+            "Abdul Qayyum Vs FOP etc." to "",
+            "Rooh Ullah Vs FOP etc." to "",
+            "Muhammad Ali Vs FOP etc." to "",
+            "Umm-e-Laila Vs NADRA etc." to "",
+            "Fakhar Abbas Vs FOP etc." to "",
+            "Arooj Vs DG NADRA etc." to "",
+            "Shahid Rasool Vs FOP etc." to "",
+            "Muhammad Adil Vs Regional Director Immigration Passport etc." to "",
+            "Ahsan Ullah Vs DG NADRA etc." to "",
+            "Mst. Nadia vs FOP etc." to "",
+            "Zafar Vs FOP etc." to "",
+            "Muhammad Noman Vs FOP etc." to "",
+            "Crl. Org. Gull Muhammad Vs Fiza Shahid." to "",
+            "Noor Baz Vs Chairman NADRA etc." to "",
+            "Mst. Madiha Hammad Vs GOP etc." to "",
+            "Noran Shah Vs Chairman NADRA etc." to "",
+            "Anam Naeem Vs DG NADRA etc." to "",
+            "Atta Ullah Vs FOP etc" to "",
+            "Ashfaq Ahmad Vs FOP etc." to "",
+            "Hanzala Nawaz Vs GOP etc" to "",
+            "Judicial Activism Panel Vs FOP etc." to "",
+            "Javaid Iqbal Vs FOP." to "",
+            "Naeem Shahzad Vs FOP etc." to "",
+            "Muhammad Usman Vs FOP etc." to "",
+            "Shahid Ashraf Vs FOP etc." to "",
+            "Imran Arif Vs Chairman NADRA etc." to "",
+            "Manzoor Masih Vs FOP etc." to "",
+            "Shahid Talib Vs Chairman NADRA etc" to "",
+            "Muhammad Younus Vs ADJ etc." to "",
+            "Ch Muhammad Arif Shafiq Vs FOP etc." to "",
+            "Inayat Ullah Qureshi Vs MoI etc." to "",
+            "Salman Babar Vs DG FIA etc." to "",
+            "Wajad Wali khan Vs FOP etc." to "",
+            "Mst. Yasmeen Saleem Vs GOP etc." to "",
+            "Zia Gilla Vs FOP etc." to "",
+            "Liaqat khan Vs FOP etc." to "",
+            "Mst. Shazia Bhatti Vs NADRA etc." to "",
+        )
+        val existing = HashSet<String>()
+        db.rawQuery("SELECT title FROM pending_files", null).use { cur ->
+            while (cur.moveToNext()) existing.add(cur.getString(0).trim().lowercase())
+        }
+        for ((title, note) in defaults) {
+            if (existing.contains(title.trim().lowercase())) continue
+            val cv = ContentValues().apply {
+                put("title", title)
+                put("note", note)
+                put("added_at", System.currentTimeMillis())
+            }
+            db.insert("pending_files", null, cv)
         }
     }
 
@@ -655,12 +760,32 @@ class Db private constructor(context: Context) :
             put("causelist_no", f.causelistNo)
             put("fixed_date", if (f.fixedDate == 0L) System.currentTimeMillis() else f.fixedDate)
             put("source_raw", f.sourceRaw)
+            put("case_id", f.caseId)
         }
         return writableDatabase.insert("fixed_cases", null, cv)
     }
 
+    fun updateFixedCase(f: FixedCase) {
+        val cv = ContentValues().apply {
+            put("title_no", f.titleNo)
+            put("court", f.court)
+            put("prayer", f.prayer)
+            put("proceedings", f.proceedings)
+            put("causelist_no", f.causelistNo)
+        }
+        writableDatabase.update("fixed_cases", cv, "id=?", arrayOf(f.id.toString()))
+    }
+
     fun deleteFixedCase(id: Long) {
         writableDatabase.delete("fixed_cases", "id=?", arrayOf(id.toString()))
+    }
+
+    /** Case ids that already have a fixed-cases report entry — for the "✓ Fixed" badge on the Cases tab. */
+    fun fixedCaseIds(): Set<Long> {
+        val out = HashSet<Long>()
+        readableDatabase.rawQuery("SELECT DISTINCT case_id FROM fixed_cases WHERE case_id != 0", null)
+            .use { cur -> while (cur.moveToNext()) out.add(cur.getLong(0)) }
+        return out
     }
 
     fun listFixedCases(): List<FixedCase> {
@@ -677,7 +802,8 @@ class Db private constructor(context: Context) :
                             proceedings = cur.getString(cur.getColumnIndexOrThrow("proceedings")),
                             causelistNo = cur.getString(cur.getColumnIndexOrThrow("causelist_no")),
                             fixedDate = cur.getLong(cur.getColumnIndexOrThrow("fixed_date")),
-                            sourceRaw = cur.getString(cur.getColumnIndexOrThrow("source_raw"))
+                            sourceRaw = cur.getString(cur.getColumnIndexOrThrow("source_raw")),
+                            caseId = cur.getLong(cur.getColumnIndexOrThrow("case_id"))
                         )
                     )
                 }
@@ -732,7 +858,7 @@ class Db private constructor(context: Context) :
 
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 3
+        private const val VERSION = 4
 
         @Volatile
         private var instance: Db? = null

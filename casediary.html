@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F5132">
-<title>Case Diary — LHC</title>
+<title>Zill's Case Diary</title>
 <style>
   :root{
     --brand:#0F5132; --brand-dark:#0A3B24; --brand-light:#D7EADF;
@@ -106,7 +106,7 @@
 <body>
 
 <header>
-  <h1 id="hTitle">Case Diary</h1>
+  <h1 id="hTitle">Zill's Case Diary</h1>
   <div class="sub" id="hSub">Lahore High Court</div>
 </header>
 
@@ -311,8 +311,99 @@ function seedDefaultKeywords(){
   return changed;
 }
 
+/* The 73 files supplied as "pending / yet to be fixed" — seeded once, verbatim
+   from the lawyer's own document, so they're being checked from day one. */
+const DEFAULT_PENDING = [
+  {title:"Ali Ahmad vs FOP etc."},
+  {title:"Salikha Bibi vs GOP etc."},
+  {title:"Ghazanfar Ali Khan vs NADRA etc."},
+  {title:"Mubeen vs DG NADRA etc."},
+  {title:"Awais Ali vs NADRA etc."},
+  {title:"Syed Wasif Abbas Zaidi vs NADRA etc."},
+  {title:"Muhammad Qamar etc. vs Amir Nadeem Najami, AD Operations etc."},
+  {title:"Maqbool vs Chairman NADRA etc."},
+  {title:"Bibi Tareena vs FOP etc."},
+  {title:"Gulnaz Bibi Vs GOP."},
+  {title:"Mst. Maryam Bibi Vs NADRA etc."},
+  {title:"Shahid Mehmood Vs FOP."},
+  {title:"Ghulam Ghous Vs DG Immigration etc."},
+  {title:"Muhammad Aamir Vs FOP etc."},
+  {title:"Abdul Rehman Vs NADRA etc."},
+  {title:"Khalil Ahmad Vs NADRA etc."},
+  {title:"Abdul Mateen vs NADRA etc", note:"Never fixed or filed in High Court (precautionary), Important case, might fix in future."},
+  {title:"Mst. Salma Bibi vs NADRA etc."},
+  {title:"Noreen vs NADRA Lahore etc."},
+  {title:"Arshad Ali vs FOP etc."},
+  {title:"Asma Yousaf vs Public at Large etc."},
+  {title:"Irfan Islam vs GOP etc."},
+  {title:"Sajjad vs FOP etc."},
+  {title:"Multan Khan vs Chairman NADRA etc."},
+  {title:"Sultan Zari vs Chairman NADRA etc."},
+  {title:"Waqar Ahmad vs NADRA etc."},
+  {title:"Muhammad Ali vs GOP etc."},
+  {title:"Sajan vs DG NADRA etc."},
+  {title:"Muhammad Usman vs DG NADRA etc."},
+  {title:"Naseer Khan Vs Chairman NADRA etc."},
+  {title:"Muhammad Anwar Khan vs FOP etc."},
+  {title:"Nasira Kousar vs GOP etc."},
+  {title:"Syed Asim Abbas Rizvi vs GOP etc."},
+  {title:"Muhammad Rafique vs Chairman NADRA etc."},
+  {title:"Aziz Khan Vs Chairman NADRA et."},
+  {title:"Muhammad Shahid Hussain Vs FOP etc."},
+  {title:"Abdul Qayyum Vs FOP etc."},
+  {title:"Rooh Ullah Vs FOP etc."},
+  {title:"Muhammad Ali Vs FOP etc."},
+  {title:"Umm-e-Laila Vs NADRA etc."},
+  {title:"Fakhar Abbas Vs FOP etc."},
+  {title:"Arooj Vs DG NADRA etc."},
+  {title:"Shahid Rasool Vs FOP etc."},
+  {title:"Muhammad Adil Vs Regional Director Immigration Passport etc."},
+  {title:"Ahsan Ullah Vs DG NADRA etc."},
+  {title:"Mst. Nadia vs FOP etc."},
+  {title:"Zafar Vs FOP etc."},
+  {title:"Muhammad Noman Vs FOP etc."},
+  {title:"Crl. Org. Gull Muhammad Vs Fiza Shahid."},
+  {title:"Noor Baz Vs Chairman NADRA etc."},
+  {title:"Mst. Madiha Hammad Vs GOP etc."},
+  {title:"Noran Shah Vs Chairman NADRA etc."},
+  {title:"Anam Naeem Vs DG NADRA etc."},
+  {title:"Atta Ullah Vs FOP etc"},
+  {title:"Ashfaq Ahmad Vs FOP etc."},
+  {title:"Hanzala Nawaz Vs GOP etc"},
+  {title:"Judicial Activism Panel Vs FOP etc."},
+  {title:"Javaid Iqbal Vs FOP."},
+  {title:"Naeem Shahzad Vs FOP etc."},
+  {title:"Muhammad Usman Vs FOP etc."},
+  {title:"Shahid Ashraf Vs FOP etc."},
+  {title:"Imran Arif Vs Chairman NADRA etc."},
+  {title:"Manzoor Masih Vs FOP etc."},
+  {title:"Shahid Talib Vs Chairman NADRA etc"},
+  {title:"Muhammad Younus Vs ADJ etc."},
+  {title:"Ch Muhammad Arif Shafiq Vs FOP etc."},
+  {title:"Inayat Ullah Qureshi Vs MoI etc."},
+  {title:"Salman Babar Vs DG FIA etc."},
+  {title:"Wajad Wali khan Vs FOP etc."},
+  {title:"Mst. Yasmeen Saleem Vs GOP etc."},
+  {title:"Zia Gilla Vs FOP etc."},
+  {title:"Liaqat khan Vs FOP etc."},
+  {title:"Mst. Shazia Bhatti Vs NADRA etc."}
+];
+function seedDefaultPending(){
+  const have = new Set(S.pending.map(p=>normalize(p.title)));
+  let changed = false;
+  for(const d of DEFAULT_PENDING){
+    if(!have.has(normalize(d.title))){
+      S.pending.push({id:nextId(), title:d.title, note:d.note||"", addedAt:Date.now()});
+      have.add(normalize(d.title));
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 let S = load();
 if(seedDefaultKeywords()) save();
+if(seedDefaultPending()) save();
 
 /* ---------------------------------------------------------------- matcher */
 /* Mirrors the Kotlin matcher in the Android build, same rules and outcomes. */
@@ -386,29 +477,48 @@ function compile(keys, cases, pending){
       }
     }
   }
-  for(const pf of (pending||[])){
+  /* Words like "Khan", "Chairman" or "NADRA" repeat across dozens of pending
+     titles — tolerating a miss on those is fine, but a title must never match
+     purely on words it shares with every other file. Each title's OWN rare
+     words (appearing in at most 2 pending titles) must always be present;
+     only the common words it shares with many other titles may be missed. */
+  const pendingList = pending || [];
+  const freq = new Map();
+  for(const pf of pendingList){
+    for(const tok of new Set(pendingTokens(pf.title))) freq.set(tok, (freq.get(tok)||0) + 1);
+  }
+  for(const pf of pendingList){
     const t = pendingTokens(pf.title);
-    if(t.length) probes.push({label:pf.title, kind:"PENDING", caseId:0, pendingId:pf.id, tokens:t, key:"pending:"+pf.id, fuzzy:true});
+    if(!t.length) continue;
+    let mustMatch = t.filter(tok => (freq.get(tok)||0) <= 2);
+    if(!mustMatch.length) mustMatch = [t[0]]; // every word is common — anchor on the first anyway
+    probes.push({label:pf.title, kind:"PENDING", caseId:0, pendingId:pf.id, tokens:t,
+      key:"pending:"+pf.id, fuzzy:true, mustMatch});
   }
   return probes;
 }
 /* Word-level, not substring: "Ali" must not match "Salim".
    Tokens of 6+ characters may also match inside a run-together word.
    Non-fuzzy probes (keywords, case numbers, saved-case parties) still
-   require every token; fuzzy (pending-file) probes tolerate a few misses. */
+   require every token; fuzzy (pending-file) probes tolerate a few misses of
+   their common words, but never of their distinctive (mustMatch) words. */
 function findHits(row, probes){
   if(!probes.length) return [];
   const norm = normalize(row);
   if(norm.length < 6) return [];
   const set = new Set(norm.split(" ").filter(Boolean));
+  const present = t => set.has(t) || (t.length >= 6 && norm.indexOf(t) !== -1);
   const out = new Map();
   for(const p of probes){
     let hitCount = 0;
-    for(const t of p.tokens){
-      if(set.has(t) || (t.length >= 6 && norm.indexOf(t) !== -1)) hitCount++;
-    }
+    for(const t of p.tokens){ if(present(t)) hitCount++; }
     const misses = p.tokens.length - hitCount;
-    const ok = p.fuzzy ? misses <= allowedMisses(p.tokens.length) : misses === 0;
+    let ok;
+    if(p.fuzzy){
+      ok = misses <= allowedMisses(p.tokens.length) && p.mustMatch.every(present);
+    } else {
+      ok = misses === 0;
+    }
     if(ok && !out.has(p.key)) out.set(p.key, {term:p.label, kind:p.kind, caseId:p.caseId, pendingId:p.pendingId||0});
   }
   return [...out.values()];
@@ -449,7 +559,7 @@ function fromInput(v){ if(!v) return 0; const [y,m,d]=v.split("-").map(Number);
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
 const TABS = ["cases","diary","pending","keys","backup"];
-const TAB_TITLES = {cases:"Case Diary", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
+const TAB_TITLES = {cases:"Zill's Case Diary", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
 function switchTab(name){
   tab = name;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));
@@ -505,6 +615,7 @@ function renderCases(){
     el.innerHTML = `<div class="empty">No cases here yet.<br>Tap “Add case” to start.</div>`;
     return;
   }
+  const fixedByCaseId = new Set(S.fixed.map(f=>f.caseId).filter(Boolean));
   el.innerHTML = list.map(c=>{
     const bits = [c.court, c.judge, c.stage, c.clientName && "Client: "+c.clientName]
       .filter(Boolean).map(esc).join(" · ");
@@ -512,10 +623,17 @@ function renderCases(){
       <div class="ref">${esc(caseRef(c) || "(no case number)")}</div>
       <div class="ttl">${esc(caseTitle(c))}</div>
       ${bits ? `<div class="meta">${bits}</div>` : ""}
-      ${c.nextDate ? `<span class="pill">${esc(relLabel(c.nextDate))} · ${esc(fmt(c.nextDate))}</span>` : ""}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${c.nextDate ? `<span class="pill">${esc(relLabel(c.nextDate))} · ${esc(fmt(c.nextDate))}</span>` : ""}
+        ${fixedByCaseId.has(c.id) ? `<span class="pill" style="background:var(--brand);color:#fff">✓ Fixed in cause list</span>` : ""}
+      </div>
     </div>`;
   }).join("");
 }
+
+/* Transient (not saved) selection state for bulk actions. */
+let selectedHits = new Set();
+let selectedFixed = new Set();
 
 function renderDiary(){
   const approval = S.hits.filter(h=>h.pendingId);
@@ -533,29 +651,44 @@ function renderDiary(){
   const kindLabel = k => ({ADVOCATE:"counsel name",PARTY:"party name",
                            CASE:"case number",OTHER:"keyword"}[k] || "");
   const isPrimary = term => { const k = S.keys.find(x=>x.term===term); return k && k.priority==="PRIMARY"; };
+  const checkbox = h => `<input type="checkbox" class="hitcheck" style="width:auto;flex:none"
+      ${selectedHits.has(h.hash)?"checked":""} onclick="toggleHitSelect('${esc(h.hash)}')">`;
+
   const hitCard = h => `<div class="card">
-      <div style="display:flex;gap:8px" onclick="viewHit('${esc(h.hash)}')">
-        <span class="pill" style="margin-top:0">${esc(h.source||"Cause list")}</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${checkbox(h)}
+        <span class="pill" style="margin-top:0" onclick="viewHit('${esc(h.hash)}')">${esc(h.source||"Cause list")}</span>
         ${isPrimary(h.term) ? `<span class="pill warn" style="margin-top:0">Primary</span>` : ""}
+        ${h.caseId ? `<span class="pill" style="margin-top:0;background:var(--brand);color:#fff">Saved case</span>` : ""}
         <span style="flex:1"></span>
         <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
       </div>
       <div class="ttl click" style="font-weight:700;margin-top:8px" onclick="viewHit('${esc(h.hash)}')">${esc(h.term)}</div>
       <div class="meta">${esc(kindLabel(h.kind))}</div>
       <div class="hit">${esc(h.raw)}</div>
-      <div style="text-align:right;margin-top:6px">
-        <span class="rmv" onclick="removeHit('${esc(h.hash)}')">Remove</span>
+      <div class="row" style="margin-top:8px">
+        <button class="btn2" onclick="openSaveDialog('${esc(h.hash)}')">Save to My Cases</button>
+        <button class="btn3" onclick="removeHit('${esc(h.hash)}')">Remove</button>
       </div>
     </div>`;
 
   let html = "";
+
+  if(selectedHits.size){
+    html += `<div class="okbox" style="display:flex;align-items:center;gap:10px">
+      <span style="flex:1">${selectedHits.size} selected</span>
+      <button class="btn" style="white-space:nowrap" onclick="saveSelectedHits()">Save to My Cases</button>
+      <button class="btn3" style="white-space:nowrap" onclick="clearHitSelection()">Clear</button>
+    </div>`;
+  }
 
   if(approval.length){
     html += `<h2>Needs your approval<span class="n">${approval.length}</span></h2>`;
     html += approval.map(h=>{
       const p = S.pending.find(x=>x.id===h.pendingId);
       return `<div class="card">
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          ${checkbox(h)}
           <span class="pill warn" style="margin-top:0">Pending file match</span>
           <span style="flex:1"></span>
           <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
@@ -563,7 +696,7 @@ function renderDiary(){
         <div class="ttl" style="font-weight:700;margin-top:8px">${esc(p ? p.title : h.term)}</div>
         <div class="hit">${esc(h.raw)}</div>
         <div class="row" style="margin-top:10px">
-          <button class="btn" onclick="approvePendingHit('${esc(h.hash)}')">✓ Approve — mark fixed</button>
+          <button class="btn" onclick="openSaveDialog('${esc(h.hash)}')">✓ Approve — save to My Cases</button>
           <button class="btn3" onclick="dismissPendingHit('${esc(h.hash)}')">Not a match</button>
         </div>
       </div>`;
@@ -571,17 +704,23 @@ function renderDiary(){
   }
 
   if(S.fixed.length){
-    html += `<h2>Fixed cases<span class="n">${S.fixed.length}</span></h2>`;
+    html += `<h2>Fixed cases — My Cases directory<span class="n">${S.fixed.length}</span></h2>`;
     html += `<div class="card tblwrap"><table class="tbl">
-      <thead><tr><th>#</th><th>Title &amp; No.</th><th>Court</th><th>Prayer / Remarks</th>
+      <thead><tr><th></th><th>#</th><th>Title &amp; No.</th><th>Court</th><th>Prayer / Remarks</th>
         <th>Proceedings</th><th>Causelist No.</th><th></th></tr></thead>
       <tbody>${S.fixed.map((f,i)=>`<tr>
-          <td>${i+1}</td><td>${esc(f.titleNo)}</td><td>${esc(f.court)}</td>
+          <td><input type="checkbox" class="fixedcheck" style="width:auto" ${selectedFixed.has(f.id)?"checked":""}
+            onclick="toggleFixedSelect(${f.id})"></td>
+          <td>${i+1}</td>
+          <td class="click" onclick="editFixed(${f.id})">${esc(f.titleNo)}</td>
+          <td>${esc(f.court)}</td>
           <td>${esc(f.prayer)}</td><td>${esc(f.proceedings)}</td><td>${esc(f.causelistNo)}</td>
           <td><span class="rmv" onclick="removeFixed(${f.id})">Remove</span></td>
         </tr>`).join("")}</tbody>
     </table></div>
-    <button class="btn2" style="width:100%;margin-top:8px" onclick="exportReportPdf()">Export report as PDF</button>`;
+    <button class="btn2" style="width:100%;margin-top:8px" onclick="exportReportPdf()">
+      ${selectedFixed.size ? `Export ${selectedFixed.size} selected as PDF` : `Export all ${S.fixed.length} as PDF`}
+    </button>`;
   }
 
   if(mine.length){
@@ -653,15 +792,21 @@ function removePending(id){
   save(); render();
 }
 
-/* -------------------------------------------------------- approve / fixed */
-function approvePendingHit(hash){
+/* ------------------------------------------------- save to My Cases / fixed */
+/* "My Cases directory" IS the exportable Fixed-cases report (S.fixed) — every
+   match, whichever section it came from (a saved Case, a keyword, or an
+   approved pending file), lands here through the same path, carrying a link
+   back to the saved Case (caseId) when there is one. */
+function openSaveDialog(hash){
   const h = S.hits.find(x=>x.hash===hash);
   if(!h) return;
-  const p = S.pending.find(x=>x.id===h.pendingId);
-  openModal(`<h3>Mark as fixed</h3>
+  const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
+  const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
+  const defaultTitle = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : h.term);
+  openModal(`<h3>Save to My Cases</h3>
     <div class="hit">${esc(h.raw)}</div>
     <label>Title &amp; No. of the case</label>
-    <textarea id="apTitle">${esc(p ? p.title : h.term)}</textarea>
+    <textarea id="apTitle">${esc(defaultTitle)}</textarea>
     <label>Name of the Court</label>
     <input id="apCourt" placeholder="e.g. Justice Asad Ali Bajwa">
     <label>Nature of Prayer &amp; Remarks</label>
@@ -671,11 +816,11 @@ function approvePendingHit(hash){
     <label>Urgent Causelist No.</label>
     <input id="apCauselist" placeholder="e.g. 4" inputmode="numeric">
     <div class="row" style="margin-top:12px">
-      <button class="btn" onclick="saveFixed('${esc(hash)}')">Save as fixed</button>
+      <button class="btn" onclick="saveHitToCases('${esc(hash)}')">Save</button>
       <button class="btn3" onclick="closeModal()">Cancel</button>
     </div>`);
 }
-function saveFixed(hash){
+function saveHitToCases(hash){
   const h = S.hits.find(x=>x.hash===hash);
   if(!h) return;
   const g = id => (document.getElementById(id)?.value || "").trim();
@@ -684,29 +829,94 @@ function saveFixed(hash){
   S.fixed.unshift({
     id: nextId(), titleNo, court: g("apCourt"), prayer: g("apPrayer"),
     proceedings: g("apProceedings"), causelistNo: g("apCauselist"),
-    fixedDate: Date.now(), sourceRaw: h.raw
+    fixedDate: Date.now(), sourceRaw: h.raw, caseId: h.caseId || 0
   });
   if(h.pendingId) S.pending = S.pending.filter(p=>p.id!==h.pendingId);
   S.hits = S.hits.filter(x=>x.hash!==hash);
+  selectedHits.delete(hash);
+  save(); closeModal(); render();
+}
+/* Bulk version — skips the per-item form for speed; details can be filled in
+   later by tapping the row in the Fixed-cases table. */
+function saveSelectedHits(){
+  if(!selectedHits.size) return;
+  for(const hash of [...selectedHits]){
+    const h = S.hits.find(x=>x.hash===hash);
+    if(!h) continue;
+    const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
+    const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
+    const titleNo = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : h.term);
+    S.fixed.unshift({
+      id: nextId(), titleNo, court:"", prayer:"", proceedings:"", causelistNo:"",
+      fixedDate: Date.now(), sourceRaw: h.raw, caseId: h.caseId || 0
+    });
+    if(h.pendingId) S.pending = S.pending.filter(x=>x.id!==h.pendingId);
+  }
+  S.hits = S.hits.filter(x=>!selectedHits.has(x.hash));
+  selectedHits.clear();
+  save(); render();
+}
+function toggleHitSelect(hash){
+  if(selectedHits.has(hash)) selectedHits.delete(hash); else selectedHits.add(hash);
+  render();
+}
+function clearHitSelection(){ selectedHits.clear(); render(); }
+
+function toggleFixedSelect(id){
+  if(selectedFixed.has(id)) selectedFixed.delete(id); else selectedFixed.add(id);
+  render();
+}
+function editFixed(id){
+  const f = S.fixed.find(x=>x.id===id);
+  if(!f) return;
+  openModal(`<h3>Edit case in My Cases</h3>
+    <label>Title &amp; No. of the case</label>
+    <textarea id="apTitle">${esc(f.titleNo)}</textarea>
+    <label>Name of the Court</label>
+    <input id="apCourt" value="${esc(f.court)}" placeholder="e.g. Justice Asad Ali Bajwa">
+    <label>Nature of Prayer &amp; Remarks</label>
+    <input id="apPrayer" value="${esc(f.prayer)}" placeholder="e.g. Unblocking of CNIC">
+    <label>Proceedings</label>
+    <input id="apProceedings" value="${esc(f.proceedings)}" placeholder="e.g. First Hearing">
+    <label>Urgent Causelist No.</label>
+    <input id="apCauselist" value="${esc(f.causelistNo)}" placeholder="e.g. 4" inputmode="numeric">
+    <div class="row" style="margin-top:12px">
+      <button class="btn" onclick="updateFixed(${id})">Save</button>
+      <button class="btn3" onclick="closeModal()">Cancel</button>
+    </div>
+    <button class="btnDanger" style="width:100%;margin-top:8px" onclick="removeFixed(${id});closeModal()">Remove from My Cases</button>`);
+}
+function updateFixed(id){
+  const f = S.fixed.find(x=>x.id===id);
+  if(!f) return;
+  const g = elId => (document.getElementById(elId)?.value || "").trim();
+  const titleNo = g("apTitle");
+  if(!titleNo){ alert("Add the case title."); return; }
+  f.titleNo = titleNo; f.court = g("apCourt"); f.prayer = g("apPrayer");
+  f.proceedings = g("apProceedings"); f.causelistNo = g("apCauselist");
   save(); closeModal(); render();
 }
 function dismissPendingHit(hash){
   S.hits = S.hits.filter(x=>x.hash!==hash);
+  selectedHits.delete(hash);
   save(); render();
 }
 function removeHit(hash){
   S.hits = S.hits.filter(x=>x.hash!==hash);
+  selectedHits.delete(hash);
   save(); render();
 }
 function removeFixed(id){
-  if(!confirm("Remove this case from the fixed-cases report?")) return;
+  if(!confirm("Remove this case from My Cases?")) return;
   S.fixed = S.fixed.filter(f=>f.id!==id);
+  selectedFixed.delete(id);
   save(); render();
 }
 
 /* --------------------------------------------------------------- pdf/print */
 function buildPrintReport(){
-  const rows = S.fixed.map((f,i)=>`<tr><td>${i+1}</td><td>${esc(f.titleNo)}</td>
+  const list = selectedFixed.size ? S.fixed.filter(f=>selectedFixed.has(f.id)) : S.fixed;
+  const rows = list.map((f,i)=>`<tr><td>${i+1}</td><td>${esc(f.titleNo)}</td>
     <td>${esc(f.court)}</td><td>${esc(f.prayer)}</td><td>${esc(f.proceedings)}</td>
     <td>${esc(f.causelistNo)}</td></tr>`).join("");
   const pendingLis = S.pending.map(p=>
@@ -900,12 +1110,17 @@ function viewCase(id){
   ].filter(Boolean).map(esc).join("<br>");
 
   const hearings = (c.hearings||[]).slice().sort((a,b)=>b.date-a.date);
+  const fixedEntry = S.fixed.find(f=>f.caseId===id);
   openModal(`
     <h3>${esc(caseRef(c) || caseTitle(c))}</h3>
     <div class="card">
       <div class="ttl" style="font-weight:600">${esc(caseTitle(c))}</div>
       <div class="meta" style="line-height:1.7">${lines}</div>
       ${c.notes ? `<div class="hit">${esc(c.notes)}</div>` : ""}
+      ${fixedEntry ? `<div class="okbox" style="margin-top:10px">✓ Fixed in cause list —
+        ${esc(fixedEntry.proceedings || "listed")}${fixedEntry.causelistNo ? ` (Causelist No. ${esc(fixedEntry.causelistNo)})` : ""}
+        on ${esc(fmt(fixedEntry.fixedDate))}</div>`
+        : `<div class="note">Not yet seen in a checked cause list.</div>`}
       <div class="row" style="margin-top:12px">
         <button class="btn2" onclick="closeModal();editCase(${c.id})">Edit</button>
         ${c.clientPhone ? `<a href="tel:${esc(c.clientPhone)}" style="flex:1;text-decoration:none">
@@ -1073,7 +1288,8 @@ function importData(ev){
 /* expose for inline handlers */
 Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,saveHearing,
   addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc,
-  switchTab,addPending,removePending,approvePendingHit,saveFixed,dismissPendingHit,
+  switchTab,addPending,removePending,openSaveDialog,saveHitToCases,saveSelectedHits,
+  toggleHitSelect,clearHitSelection,toggleFixedSelect,editFixed,updateFixed,dismissPendingHit,
   removeHit,removeFixed,exportReportPdf,togglePriority,searchScans});
 
 render();

@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F5132">
+<title>Case Diary — LHC</title>
+<style>
+  :root{
+    --brand:#0F5132; --brand-dark:#0A3B24; --brand-light:#D7EADF;
+    --accent:#B58B2A; --bg:#F7F7F5; --surface:#fff;
+    --text:#16181A; --muted:#5C6469; --line:#E3E5E4; --danger:#B3261E;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding-bottom:76px}
+  header{background:var(--brand);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:20}
+  header h1{margin:0;font-size:17px;font-weight:600}
+  header .sub{font-size:12px;opacity:.8;margin-top:2px}
+  main{padding:12px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:14px;margin-bottom:12px}
+  .card.click{cursor:pointer}
+  .card.click:active{background:#f2f5f3}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand);
+    margin:22px 4px 8px}
+  h2 .n{float:right;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);
+    border-radius:10px;font:inherit;background:#fff;color:var(--text)}
+  textarea{min-height:110px;resize:vertical}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--brand-light);border-color:var(--brand)}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1;min-width:0}
+  button{font:inherit;border:0;border-radius:10px;padding:11px 14px;cursor:pointer}
+  .btn{background:var(--brand);color:#fff;font-weight:600}
+  .btn:active{background:var(--brand-dark)}
+  .btn2{background:var(--brand-light);color:var(--brand-dark);font-weight:600}
+  .btn3{background:transparent;color:var(--brand);border:1px solid var(--line);font-weight:600}
+  .btnDanger{background:transparent;color:var(--danger);border:1px solid var(--line)}
+  .ref{color:var(--brand);font-weight:700;font-size:15px}
+  .ttl{margin-top:2px}
+  .meta{font-size:12px;color:var(--muted);margin-top:6px}
+  .pill{display:inline-block;background:var(--brand-light);color:var(--brand-dark);
+    font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;margin-top:8px}
+  .pill.warn{background:#FDECD9;color:#8A4B08}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .chip{background:var(--brand-light);color:var(--brand-dark);border-radius:999px;
+    padding:6px 12px;font-size:13px;display:flex;align-items:center;gap:8px}
+  .chip.off{background:#eceeed;color:#7a8380}
+  .chip b{font-weight:600}
+  .chip .x{cursor:pointer;font-weight:700;opacity:.6}
+  .chip .x:active{opacity:1}
+  .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;
+    border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
+  .tabs button{flex:1;background:none;color:var(--muted);font-size:11px;padding:9px 4px 11px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;border-radius:0}
+  .tabs button.on{color:var(--brand);font-weight:700}
+  .tabs svg{width:22px;height:22px;fill:currentColor}
+  .empty{text-align:center;color:var(--muted);padding:38px 20px;font-size:14px;line-height:1.6}
+  .filters{display:flex;gap:8px;overflow-x:auto;padding:4px 0 2px;scrollbar-width:none}
+  .filters::-webkit-scrollbar{display:none}
+  .filters button{background:#fff;border:1px solid var(--line);color:var(--muted);
+    font-size:13px;padding:7px 14px;white-space:nowrap}
+  .filters button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none;
+    align-items:flex-end}
+  .modal.on{display:flex}
+  .sheet{background:var(--bg);width:100%;max-height:92vh;overflow-y:auto;
+    border-radius:18px 18px 0 0;padding:16px 14px calc(20px + env(safe-area-inset-bottom))}
+  .sheet h3{margin:2px 0 12px;font-size:16px}
+  .hit{font-size:13px;color:var(--text);background:#fbfbfa;border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;margin-top:8px;word-break:break-word}
+  .note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+  .warnbox{background:#FDECD9;border:1px solid #F0CFA6;color:#7A4708;border-radius:10px;
+    padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:12px}
+  .okbox{background:var(--brand-light);border:1px solid #B9D8C6;color:var(--brand-dark);
+    border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+  .stat{display:flex;gap:8px;margin-bottom:12px}
+  .stat div{flex:1;background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:10px;text-align:center}
+  .stat b{display:block;font-size:20px;color:var(--brand)}
+  .stat span{font-size:11px;color:var(--muted)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="hTitle">Case Diary</h1>
+  <div class="sub" id="hSub">Lahore High Court</div>
+</header>
+
+<main>
+  <!-- ============================ CASES ============================ -->
+  <section id="tab-cases">
+    <input id="search" placeholder="Search case no, party, client, court…" autocomplete="off">
+    <div class="filters" style="margin-top:10px">
+      <button data-f="ACTIVE" class="on">Active</button>
+      <button data-f="DECIDED">Decided</button>
+      <button data-f="ARCHIVED">Archived</button>
+      <button data-f="">All</button>
+    </div>
+    <div id="caseList"></div>
+    <button class="btn" style="width:100%;margin-top:14px" onclick="editCase(null)">+ Add case</button>
+  </section>
+
+  <!-- ============================ DIARY ============================ -->
+  <section id="tab-diary" class="hidden">
+    <div class="stat">
+      <div><b id="stMine">0</b><span>my cases fixed</span></div>
+      <div><b id="stOther">0</b><span>other matches</span></div>
+      <div><b id="stSoon">0</b><span>hearings ≤14d</span></div>
+    </div>
+
+    <div class="card">
+      <b style="font-size:14px">Check a cause list</b>
+      <div class="note">
+        Open the LHC urgent list, select all the text on the page, copy it, and paste
+        it here. Everything is matched on this phone — nothing is uploaded.
+      </div>
+      <button class="btn2" style="width:100%;margin-top:10px" onclick="openLhc()">
+        Open LHC urgent cause list ↗
+      </button>
+      <textarea id="paste" style="margin-top:8px"
+        placeholder="Paste the cause list text here…"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" onclick="scanPaste()">Scan for my keywords</button>
+        <button class="btn3" onclick="document.getElementById('paste').value=''">Clear</button>
+      </div>
+      <div id="scanResult"></div>
+    </div>
+
+    <div id="diaryList"></div>
+  </section>
+
+  <!-- ========================== KEYWORDS =========================== -->
+  <section id="tab-keys" class="hidden">
+    <div class="card">
+      <b style="font-size:14px">Keywords to watch</b>
+      <div class="note">
+        Your name as it is printed in the cause list, party names, case numbers.
+        Matching ignores case, spacing and punctuation, so <b>Ahmad Raza</b> also
+        finds <b>RAZA, AHMAD</b>. Add a second spelling if yours varies.
+      </div>
+      <div class="chips" id="keyChips"></div>
+      <label>New keyword</label>
+      <input id="newKey" placeholder="e.g. Zill E Rukh" autocomplete="off">
+      <label>What kind?</label>
+      <select id="newKeyKind">
+        <option value="ADVOCATE">Advocate / counsel name</option>
+        <option value="PARTY">Party name</option>
+        <option value="CASE">Case number</option>
+        <option value="OTHER">Other</option>
+      </select>
+      <button class="btn2" style="width:100%;margin-top:10px" onclick="addKey()">Add keyword</button>
+    </div>
+  </section>
+
+  <!-- ============================ BACKUP =========================== -->
+  <section id="tab-backup" class="hidden">
+    <div class="warnbox" id="storeWarn">
+      Everything lives in this browser's storage on this phone. Clearing Chrome's
+      site data would erase it — export a backup every so often.
+    </div>
+    <div class="card">
+      <b style="font-size:14px">Backup</b>
+      <div class="note">Downloads a single JSON file with every case, hearing and keyword.</div>
+      <button class="btn" style="width:100%;margin-top:10px" onclick="exportData()">Export backup</button>
+      <label>Restore from a backup file</label>
+      <input type="file" id="importFile" accept=".json,application/json" onchange="importData(event)">
+    </div>
+    <div class="card">
+      <b style="font-size:14px">Install on your home screen</b>
+      <div class="note">
+        Chrome menu (⋮) → <b>Add to Home screen</b>. It then opens like an app and
+        works with no internet. Nothing is sent anywhere.
+      </div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">What this web version cannot do</b>
+      <div class="note">
+        A browser is not allowed to read another website's pages in the background,
+        so this cannot check the LHC site by itself at 6:30pm — that is why you paste
+        the list in. The Android APK does that part automatically.
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs">
+  <button data-t="cases" class="on"><svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>Cases</button>
+  <button data-t="diary"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V9h14v10zM7 11h5v5H7z"/></svg>Diary</button>
+  <button data-t="keys"><svg viewBox="0 0 24 24"><path d="M12.65 10A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H17v4h4v-4h2v-4H12.65zM7 14a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>Keywords</button>
+  <button data-t="backup"><svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>Backup</button>
+</nav>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ store */
+const KEY = "casediary.v1";
+const blank = { cases: [], keys: [], hits: [], seq: 1 };
+let S = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return structuredClone(blank);
+    const d = JSON.parse(raw);
+    return Object.assign(structuredClone(blank), d);
+  }catch(e){ return structuredClone(blank); }
+}
+let saveFailed = false;
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){
+    if(!saveFailed){
+      saveFailed = true;
+      alert("This browser refused to save data. Open the file from your home-screen shortcut, and export a backup often.");
+    }
+  }
+}
+const nextId = () => S.seq++;
+
+/* ---------------------------------------------------------------- matcher */
+/* Mirrors the Kotlin matcher in the Android build, same rules and outcomes. */
+
+function normalize(s){
+  let out = "";
+  for(const ch of String(s).toLowerCase()){
+    out += /[a-z0-9؀-ۿ]/.test(ch) ? ch : " ";
+  }
+  return out.replace(/\s+/g," ").trim();
+}
+function meaningfulTokens(term){
+  const all = normalize(term).split(" ").filter(Boolean);
+  const strong = all.filter(t => t.length >= 3 || /\d/.test(t));
+  return strong.length ? strong : all;
+}
+function usableTokens(term){
+  const t = meaningfulTokens(term);
+  if(!t.length) return null;
+  if(t.length === 1 && t[0].length < 3) return null;
+  return t;
+}
+function caseRef(c){
+  let s = "";
+  if(c.caseType) s += c.caseType.trim() + " ";
+  if(c.caseNo)   s += c.caseNo.trim();
+  if(c.caseYear) s += "/" + c.caseYear.trim();
+  return s.trim();
+}
+function caseTitle(c){
+  const p = (c.petitioner||"").trim(), r = (c.respondent||"").trim();
+  if(p && r) return p + " vs. " + r;
+  return p || r || "(untitled)";
+}
+/* Tokenise every keyword once per scan, not once per row. */
+function compile(keys, cases){
+  const probes = [];
+  for(const k of keys){
+    if(k.enabled === false) continue;
+    const t = usableTokens(k.term);
+    if(t) probes.push({label:k.term, kind:k.kind, caseId:0, tokens:t, key:normalize(k.term)});
+  }
+  for(const c of cases){
+    if(c.status === "ARCHIVED") continue;
+    const ref = caseRef(c);
+    if(c.caseNo && c.caseYear){
+      const t = usableTokens(c.caseNo + " " + c.caseYear);
+      if(t) probes.push({label:ref, kind:"CASE", caseId:c.id, tokens:t, key:normalize(ref)});
+    }
+    const party = (c.petitioner||"").trim();
+    if(party.length >= 4){
+      const t = usableTokens(party);
+      if(t){
+        const label = ref || party;
+        probes.push({label, kind:"PARTY", caseId:c.id, tokens:t, key:normalize(label)});
+      }
+    }
+  }
+  return probes;
+}
+/* Word-level, not substring: "Ali" must not match "Salim".
+   Tokens of 6+ characters may also match inside a run-together word. */
+function findHits(row, probes){
+  if(!probes.length) return [];
+  const norm = normalize(row);
+  if(norm.length < 6) return [];
+  const set = new Set(norm.split(" ").filter(Boolean));
+  const out = new Map();
+  for(const p of probes){
+    let ok = true;
+    for(const t of p.tokens){
+      if(set.has(t)) continue;
+      if(t.length >= 6 && norm.indexOf(t) !== -1) continue;
+      ok = false; break;
+    }
+    if(ok && !out.has(p.key)) out.set(p.key, {term:p.label, kind:p.kind, caseId:p.caseId});
+  }
+  return [...out.values()];
+}
+function hashOf(parts){
+  const joined = parts.map(normalize).join("|");
+  let h = 5381;
+  for(let i=0;i<joined.length;i++){ h = ((h*33) ^ joined.charCodeAt(i)) >>> 0; }
+  return h.toString(36) + "-" + joined.length;
+}
+
+/* ------------------------------------------------------------------ dates */
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function startOfDay(ms){ const d=new Date(ms); d.setHours(0,0,0,0); return d.getTime(); }
+function todayStart(){ return startOfDay(Date.now()); }
+function plusDays(ms,n){ const d=new Date(ms); d.setDate(d.getDate()+n); return d.getTime(); }
+function fmt(ms){ if(!ms) return "—"; const d=new Date(ms);
+  return `${String(d.getDate()).padStart(2,"0")} ${MON[d.getMonth()]} ${d.getFullYear()}`; }
+function fmtDay(ms){ if(!ms) return "—"; return DAY[new Date(ms).getDay()] + ", " + fmt(ms); }
+function stamp(ms){ if(!ms) return "never"; const d=new Date(ms);
+  return fmt(ms) + ", " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); }
+function relLabel(ms){
+  if(!ms) return "No date set";
+  const diff = Math.round((startOfDay(ms) - todayStart()) / 86400000);
+  if(diff === 0) return "Today";
+  if(diff === 1) return "Tomorrow";
+  if(diff === -1) return "Yesterday";
+  if(diff > 1 && diff < 7) return "In " + diff + " days";
+  if(diff < -1) return (-diff) + " days ago";
+  return fmt(ms);
+}
+function toInput(ms){ if(!ms) return ""; const d=new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function fromInput(v){ if(!v) return 0; const [y,m,d]=v.split("-").map(Number);
+  return new Date(y, m-1, d, 10, 0, 0, 0).getTime(); }
+
+/* ------------------------------------------------------------------- tabs */
+let tab = "cases", filter = "ACTIVE", query = "";
+document.querySelectorAll(".tabs button").forEach(b=>{
+  b.onclick = ()=>{
+    tab = b.dataset.t;
+    document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x===b));
+    ["cases","diary","keys","backup"].forEach(t=>
+      document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
+    document.getElementById("hTitle").textContent =
+      {cases:"Case Diary", diary:"Diary", keys:"Keywords", backup:"Backup"}[tab];
+    render();
+    window.scrollTo(0,0);
+  };
+});
+document.querySelectorAll(".filters button").forEach(b=>{
+  b.onclick = ()=>{
+    filter = b.dataset.f;
+    document.querySelectorAll(".filters button").forEach(x=>x.classList.toggle("on", x===b));
+    render();
+  };
+});
+document.getElementById("search").addEventListener("input", e=>{
+  query = e.target.value.trim().toLowerCase();
+  clearTimeout(window.__st);
+  window.__st = setTimeout(render, 200);
+});
+
+/* ----------------------------------------------------------------- render */
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, m =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+function render(){
+  if(tab === "cases") renderCases();
+  if(tab === "diary") renderDiary();
+  if(tab === "keys")  renderKeys();
+  document.getElementById("hSub").textContent =
+    S.cases.filter(c=>c.status==="ACTIVE").length + " active cases · offline";
+}
+
+function renderCases(){
+  let list = S.cases.slice();
+  if(filter) list = list.filter(c=>c.status===filter);
+  if(query){
+    list = list.filter(c => [c.caseType,c.caseNo,c.caseYear,c.petitioner,c.respondent,
+      c.clientName,c.court,c.judge,c.stage,c.notes]
+      .join(" ").toLowerCase().includes(query));
+  }
+  list.sort((a,b)=>{
+    const an = a.nextDate||Infinity, bn = b.nextDate||Infinity;
+    return an - bn || (b.updatedAt||0) - (a.updatedAt||0);
+  });
+
+  const el = document.getElementById("caseList");
+  if(!list.length){
+    el.innerHTML = `<div class="empty">No cases here yet.<br>Tap “Add case” to start.</div>`;
+    return;
+  }
+  el.innerHTML = list.map(c=>{
+    const bits = [c.court, c.judge, c.stage, c.clientName && "Client: "+c.clientName]
+      .filter(Boolean).map(esc).join(" · ");
+    return `<div class="card click" onclick="viewCase(${c.id})">
+      <div class="ref">${esc(caseRef(c) || "(no case number)")}</div>
+      <div class="ttl">${esc(caseTitle(c))}</div>
+      ${bits ? `<div class="meta">${bits}</div>` : ""}
+      ${c.nextDate ? `<span class="pill">${esc(relLabel(c.nextDate))} · ${esc(fmt(c.nextDate))}</span>` : ""}
+    </div>`;
+  }).join("");
+}
+
+function renderDiary(){
+  const mine   = S.hits.filter(h=>h.caseId);
+  const others = S.hits.filter(h=>!h.caseId);
+  const from = todayStart(), to = plusDays(from, 14);
+  const soon = S.cases.filter(c=>c.status==="ACTIVE" && c.nextDate>=from && c.nextDate<=to)
+                      .sort((a,b)=>a.nextDate-b.nextDate);
+
+  document.getElementById("stMine").textContent  = mine.length;
+  document.getElementById("stOther").textContent = others.length;
+  document.getElementById("stSoon").textContent  = soon.length;
+
+  const kindLabel = k => ({ADVOCATE:"counsel name",PARTY:"party name",
+                           CASE:"case number",OTHER:"keyword"}[k] || "");
+  const hitCard = h => `<div class="card click" onclick="viewHit('${esc(h.hash)}')">
+      <div style="display:flex;gap:8px">
+        <span class="pill" style="margin-top:0">${esc(h.source||"Cause list")}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
+      </div>
+      <div class="ttl" style="font-weight:700;margin-top:8px">${esc(h.term)}</div>
+      <div class="meta">${esc(kindLabel(h.kind))}</div>
+      <div class="hit">${esc(h.raw)}</div>
+    </div>`;
+
+  let html = "";
+  if(mine.length){
+    html += `<h2>My cases fixed<span class="n">${mine.length}</span></h2>` +
+            mine.map(hitCard).join("");
+  }
+  if(others.length){
+    html += `<h2>Other keyword matches<span class="n">${others.length}</span></h2>` +
+            others.map(hitCard).join("");
+  }
+  if(soon.length){
+    html += `<h2>Upcoming hearings<span class="n">${soon.length}</span></h2>` +
+      soon.map(c=>`<div class="card click" onclick="viewCase(${c.id})">
+        <div style="display:flex;gap:8px">
+          <span class="pill" style="margin-top:0">${esc(relLabel(c.nextDate))}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:var(--muted)">${esc(fmtDay(c.nextDate))}</span>
+        </div>
+        <div class="ttl" style="font-weight:700;margin-top:8px">${esc(caseRef(c)||caseTitle(c))}</div>
+        <div class="meta">${esc([caseTitle(c), c.court, c.stage].filter(Boolean).join(" · "))}</div>
+      </div>`).join("");
+  }
+  if(S.hits.length){
+    html += `<button class="btnDanger" style="width:100%;margin-top:14px"
+      onclick="clearHits()">Clear all matches</button>`;
+  }
+  if(!html) html = `<div class="empty">Nothing yet.<br>Paste a cause list above to check it
+    against your keywords.</div>`;
+  document.getElementById("diaryList").innerHTML = html;
+}
+
+function renderKeys(){
+  const el = document.getElementById("keyChips");
+  if(!S.keys.length){
+    el.innerHTML = `<span class="chip off">No keywords yet</span>`;
+    return;
+  }
+  el.innerHTML = S.keys.map(k=>`<span class="chip ${k.enabled===false?"off":""}">
+      <b onclick="toggleKey(${k.id})">${esc(k.term)}</b>
+      <span style="opacity:.65;font-size:11px">${esc((k.kind||"").toLowerCase())}</span>
+      <span class="x" onclick="delKey(${k.id})">×</span>
+    </span>`).join("");
+}
+
+/* -------------------------------------------------------------- keywords */
+function addKey(){
+  const i = document.getElementById("newKey");
+  const term = i.value.trim();
+  if(term.length < 3){ alert("Keyword is too short — use at least 3 characters."); return; }
+  S.keys.push({id:nextId(), term, kind:document.getElementById("newKeyKind").value, enabled:true});
+  i.value = "";
+  save(); render();
+}
+function delKey(id){
+  S.keys = S.keys.filter(k=>k.id!==id);
+  save(); render();
+}
+function toggleKey(id){
+  const k = S.keys.find(x=>x.id===id);
+  if(k){ k.enabled = k.enabled === false; save(); render(); }
+}
+
+/* ------------------------------------------------------------------ scan */
+function openLhc(){
+  window.open("https://data.lhc.gov.pk/index.php/case_management/urgent_cause_list_final",
+    "_blank", "noopener");
+}
+function scanPaste(){
+  const text = document.getElementById("paste").value;
+  const out  = document.getElementById("scanResult");
+  if(!text.trim()){ out.innerHTML = `<div class="warnbox" style="margin-top:10px">Paste the cause list text first.</div>`; return; }
+  if(!S.keys.length && !S.cases.length){
+    out.innerHTML = `<div class="warnbox" style="margin-top:10px">Add a keyword or a case first — there is nothing to look for.</div>`;
+    return;
+  }
+
+  const probes = compile(S.keys, S.cases);
+  const rows = text.split("\n").map(r=>r.trim()).filter(r=>r.length >= 8);
+  const seen = new Set(S.hits.map(h=>h.hash));
+  const now = Date.now();
+  let fresh = 0, total = 0;
+
+  for(const row of rows){
+    let hs = findHits(row, probes);
+    if(!hs.length) continue;
+    // If a row is one of your own cases, it belongs in "My cases" only — a
+    // keyword that also matched the same line must not duplicate it below.
+    const mineOnly = hs.filter(h => h.caseId);
+    if(mineOnly.length) hs = mineOnly;
+    const clipped = row.length > 400 ? row.slice(0,400) + "…" : row;
+    for(const h of hs){
+      total++;
+      const hash = hashOf(["paste", clipped, h.term]);
+      if(seen.has(hash)) continue;
+      seen.add(hash);
+      fresh++;
+      S.hits.unshift({hash, term:h.term, kind:h.kind, caseId:h.caseId,
+        source:"Pasted list", raw:clipped, foundAt:now});
+    }
+  }
+  if(S.hits.length > 400) S.hits.length = 400;
+  save();
+
+  const mine = S.hits.filter(h=>h.caseId).length;
+  out.innerHTML = fresh
+    ? `<div class="okbox" style="margin-top:10px"><b>${fresh} new match${fresh===1?"":"es"}</b>
+         from ${rows.length} lines. ${mine} total tied to your own cases —
+         see the Diary below.</div>`
+    : `<div class="warnbox" style="margin-top:10px">
+         ${total ? `Nothing new — ${total} match${total===1?"":"es"} were already recorded.`
+                 : `No matches in ${rows.length} lines. Check your keywords are spelled the way
+                    the court prints them.`}</div>`;
+  render();
+}
+function clearHits(){
+  if(!confirm("Clear all recorded matches? Your cases are not touched.")) return;
+  S.hits = []; save(); render();
+}
+
+/* ----------------------------------------------------------------- modal */
+const modal = document.getElementById("modal"), sheet = document.getElementById("sheet");
+modal.onclick = e => { if(e.target === modal) closeModal(); };
+function openModal(html){ sheet.innerHTML = html; modal.classList.add("on"); sheet.scrollTop = 0; }
+function closeModal(){ modal.classList.remove("on"); }
+
+function viewHit(hash){
+  const h = S.hits.find(x=>x.hash===hash);
+  if(!h) return;
+  const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
+  openModal(`<h3>${esc(h.term)}</h3>
+    <div class="hit">${esc(h.raw)}</div>
+    <div class="note">Source: ${esc(h.source)}<br>Found: ${esc(stamp(h.foundAt))}</div>
+    ${c ? `<button class="btn2" style="width:100%;margin-top:12px"
+            onclick="closeModal();viewCase(${c.id})">Open ${esc(caseRef(c)||caseTitle(c))}</button>` : ""}
+    <button class="btn3" style="width:100%;margin-top:8px" onclick="closeModal()">Close</button>`);
+}
+
+function viewCase(id){
+  const c = S.cases.find(x=>x.id===id);
+  if(!c) return;
+  const lines = [
+    c.court && "Bench: " + c.court,
+    c.judge && "Judge / court: " + c.judge,
+    c.stage && "Stage: " + c.stage,
+    "Next hearing: " + (c.nextDate ? fmtDay(c.nextDate) : "not set"),
+    c.clientName && "Client: " + c.clientName,
+    c.clientPhone && "Phone: " + c.clientPhone,
+    (c.feeTotal>0) && `Fee: Rs ${(+c.feeReceived||0).toLocaleString()} of Rs ${(+c.feeTotal).toLocaleString()}`,
+    "Status: " + c.status
+  ].filter(Boolean).map(esc).join("<br>");
+
+  const hearings = (c.hearings||[]).slice().sort((a,b)=>b.date-a.date);
+  openModal(`
+    <h3>${esc(caseRef(c) || caseTitle(c))}</h3>
+    <div class="card">
+      <div class="ttl" style="font-weight:600">${esc(caseTitle(c))}</div>
+      <div class="meta" style="line-height:1.7">${lines}</div>
+      ${c.notes ? `<div class="hit">${esc(c.notes)}</div>` : ""}
+      <div class="row" style="margin-top:12px">
+        <button class="btn2" onclick="closeModal();editCase(${c.id})">Edit</button>
+        ${c.clientPhone ? `<a href="tel:${esc(c.clientPhone)}" style="flex:1;text-decoration:none">
+          <button class="btn3" style="width:100%">Call client</button></a>` : ""}
+      </div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">Hearings</b>
+      ${hearings.length ? hearings.map(h=>`
+        <div class="hit"><b>${esc(fmtDay(h.date))}</b>${h.nextDate?` → next ${esc(fmt(h.nextDate))}`:""}
+        <br>${esc(h.proceedings||"(no note)")}</div>`).join("")
+        : `<div class="note">Nothing recorded yet.</div>`}
+      <button class="btn2" style="width:100%;margin-top:10px"
+        onclick="addHearing(${c.id})">+ Add hearing</button>
+    </div>
+    <button class="btn3" style="width:100%" onclick="closeModal()">Close</button>`);
+}
+
+function addHearing(id){
+  const c = S.cases.find(x=>x.id===id);
+  if(!c) return;
+  openModal(`<h3>Add hearing</h3>
+    <label>Hearing date</label><input type="date" id="hDate" value="${toInput(Date.now())}">
+    <label>What happened</label><textarea id="hNote" placeholder="Adjourned, arguments heard…"></textarea>
+    <label>Next date (optional)</label><input type="date" id="hNext">
+    <div class="row" style="margin-top:12px">
+      <button class="btn" onclick="saveHearing(${id})">Save</button>
+      <button class="btn3" onclick="viewCase(${id})">Cancel</button>
+    </div>`);
+}
+function saveHearing(id){
+  const c = S.cases.find(x=>x.id===id);
+  if(!c) return;
+  c.hearings = c.hearings || [];
+  const nextDate = fromInput(document.getElementById("hNext").value);
+  c.hearings.push({
+    date: fromInput(document.getElementById("hDate").value) || Date.now(),
+    proceedings: document.getElementById("hNote").value.trim(),
+    nextDate
+  });
+  if(nextDate) c.nextDate = nextDate;   // recording a next date moves the case on
+  c.updatedAt = Date.now();
+  save(); viewCase(id); render();
+}
+
+function editCase(id){
+  const c = id ? S.cases.find(x=>x.id===id) : {
+    caseType:"",caseNo:"",caseYear:"",petitioner:"",respondent:"",clientName:"",
+    clientPhone:"",court:"",judge:"",stage:"",nextDate:0,status:"ACTIVE",
+    feeTotal:0,feeReceived:0,notes:"",hearings:[]
+  };
+  const f = (k,v) => esc(c[k] || v || "");
+  openModal(`<h3>${id ? "Edit case" : "Add case"}</h3>
+    <div class="row">
+      <div><label>Type</label><input id="f_caseType" value="${f("caseType")}" placeholder="W.P."></div>
+      <div><label>Number</label><input id="f_caseNo" value="${f("caseNo")}" placeholder="12345"></div>
+      <div><label>Year</label><input id="f_caseYear" value="${f("caseYear")}" placeholder="2025" inputmode="numeric"></div>
+    </div>
+    <label>Petitioner / Appellant</label><input id="f_petitioner" value="${f("petitioner")}">
+    <label>Respondent</label><input id="f_respondent" value="${f("respondent")}">
+    <label>Client name</label><input id="f_clientName" value="${f("clientName")}">
+    <label>Client phone</label><input id="f_clientPhone" value="${f("clientPhone")}" inputmode="tel">
+    <div class="row">
+      <div><label>Bench / Court</label><input id="f_court" value="${f("court")}" placeholder="Lahore"></div>
+      <div><label>Judge / court no.</label><input id="f_judge" value="${f("judge")}"></div>
+    </div>
+    <label>Stage</label><input id="f_stage" value="${f("stage")}" placeholder="Arguments">
+    <label>Next hearing</label><input type="date" id="f_nextDate" value="${toInput(c.nextDate)}">
+    <label>Status</label>
+    <select id="f_status">
+      <option value="ACTIVE"${c.status==="ACTIVE"?" selected":""}>Active</option>
+      <option value="DECIDED"${c.status==="DECIDED"?" selected":""}>Decided</option>
+      <option value="ARCHIVED"${c.status==="ARCHIVED"?" selected":""}>Archived</option>
+    </select>
+    <div class="row">
+      <div><label>Total fee</label><input id="f_feeTotal" value="${c.feeTotal||""}" inputmode="decimal"></div>
+      <div><label>Received</label><input id="f_feeReceived" value="${c.feeReceived||""}" inputmode="decimal"></div>
+    </div>
+    <label>Notes</label><textarea id="f_notes">${esc(c.notes||"")}</textarea>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" onclick="saveCase(${id||0})">Save</button>
+      <button class="btn3" onclick="closeModal()">Cancel</button>
+    </div>
+    ${id ? `<button class="btnDanger" style="width:100%;margin-top:8px"
+              onclick="deleteCase(${id})">Delete this case</button>` : ""}`);
+}
+
+function saveCase(id){
+  const g = k => (document.getElementById("f_"+k)?.value || "").trim();
+  const c = id ? S.cases.find(x=>x.id===id) : {id:nextId(), hearings:[], createdAt:Date.now()};
+  if(!id) S.cases.push(c);
+
+  ["caseType","caseNo","caseYear","petitioner","respondent","clientName","clientPhone",
+   "court","judge","stage","notes"].forEach(k => c[k] = g(k));
+  c.nextDate    = fromInput(g("nextDate"));
+  c.status      = g("status") || "ACTIVE";
+  c.feeTotal    = parseFloat(g("feeTotal")) || 0;
+  c.feeReceived = parseFloat(g("feeReceived")) || 0;
+  c.updatedAt   = Date.now();
+
+  if(!c.caseNo && !c.petitioner && !c.respondent){
+    alert("Add at least a case number or a party name.");
+    if(!id) S.cases.pop();
+    return;
+  }
+  save(); closeModal(); render();
+}
+
+function deleteCase(id){
+  if(!confirm("Delete this case and its hearings? This cannot be undone.")) return;
+  S.cases = S.cases.filter(c=>c.id!==id);
+  S.hits  = S.hits.map(h => h.caseId===id ? Object.assign(h,{caseId:0}) : h);
+  save(); closeModal(); render();
+}
+
+/* ---------------------------------------------------------------- backup */
+function exportData(){
+  const blob = new Blob([JSON.stringify(
+    {format:"casediary-backup", version:1, exportedAt:Date.now(),
+     cases:S.cases, watchTerms:S.keys}, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "case-diary-backup-" + toInput(Date.now()) + ".json";
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+function importData(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      if(d.format !== "casediary-backup") throw new Error("not a Case Diary backup");
+      let nc = 0, nk = 0;
+      for(const c of (d.cases||[])){
+        S.cases.push(Object.assign({}, c, {id:nextId(), hearings:c.hearings||[]}));
+        nc++;
+      }
+      const have = new Set(S.keys.map(k=>k.term.toLowerCase()));
+      for(const k of (d.watchTerms||[])){
+        if(!k.term || have.has(k.term.toLowerCase())) continue;
+        S.keys.push({id:nextId(), term:k.term, kind:k.kind||"ADVOCATE", enabled:k.enabled!==false});
+        nk++;
+      }
+      save(); render();
+      alert(`Imported ${nc} case(s) and ${nk} keyword(s).`);
+    }catch(e){ alert("Could not read that file: " + e.message); }
+    ev.target.value = "";
+  };
+  r.readAsText(file);
+}
+
+/* expose for inline handlers */
+Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,saveHearing,
+  addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc});
+
+render();
+</script>
+</body>
+</html>

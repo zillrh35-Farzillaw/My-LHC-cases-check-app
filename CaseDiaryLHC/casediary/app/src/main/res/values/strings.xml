@@ -1,0 +1,83 @@
+<resources>
+    <string name="app_name">Case Diary</string>
+
+    <string name="tab_cases">Cases</string>
+    <string name="tab_diary">Diary</string>
+    <string name="tab_settings">Settings</string>
+
+    <string name="ch_fixtures">Cause list alerts</string>
+    <string name="ch_fixtures_desc">Fires when one of your cases appears in a Lahore High Court cause list.</string>
+    <string name="ch_reminders">Hearing reminders</string>
+    <string name="ch_reminders_desc">Evening reminder for hearings you have entered yourself.</string>
+
+    <string name="notif_fixture_one">Your case is fixed</string>
+    <string name="notif_fixture_many">%1$d of your cases are fixed</string>
+    <string name="notif_reminder_title">%1$d hearing(s) tomorrow</string>
+
+    <string name="add_case">Add case</string>
+    <string name="edit_case">Edit case</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="search_hint">Search case no, party, client, court…</string>
+
+    <string name="filter_active">Active</string>
+    <string name="filter_decided">Decided</string>
+    <string name="filter_archived">Archived</string>
+    <string name="filter_all">All</string>
+
+    <string name="empty_cases">No cases yet.\nTap + to add your first one.</string>
+    <string name="empty_diary">Nothing here yet.\nRun a check or add a hearing date to a case.</string>
+
+    <string name="case_type">Case type (W.P., Crl. Misc., R.F.A.…)</string>
+    <string name="case_no">Case number</string>
+    <string name="case_year">Year</string>
+    <string name="petitioner">Petitioner / Appellant</string>
+    <string name="respondent">Respondent</string>
+    <string name="client_name">Client name</string>
+    <string name="client_phone">Client phone</string>
+    <string name="court_bench">Bench / Court</string>
+    <string name="judge">Judge / Court no.</string>
+    <string name="stage">Stage</string>
+    <string name="next_date">Next hearing</string>
+    <string name="status">Status</string>
+    <string name="fee_total">Total fee</string>
+    <string name="fee_received">Received</string>
+    <string name="notes">Notes</string>
+    <string name="pick_date">Pick date</string>
+    <string name="clear_date">Clear</string>
+
+    <string name="hearings">Hearings</string>
+    <string name="add_hearing">Add hearing</string>
+    <string name="proceedings">What happened</string>
+
+    <string name="check_now">Check cause lists now</string>
+    <string name="open_browser">Open LHC site</string>
+    <string name="scan_page">Scan page</string>
+    <string name="mark_all_read">Mark all read</string>
+    <string name="clear_hits">Clear all hits</string>
+
+    <string name="settings_watch">Keywords to watch</string>
+    <string name="settings_watch_desc">Your name as it appears in cause lists, party names, and anything else worth catching. All matching is done on your phone.</string>
+    <string name="settings_sources">Cause list pages</string>
+    <string name="settings_sources_desc">Pages checked automatically. If a list needs a form filled in, use the built-in browser and Scan page instead.</string>
+    <string name="settings_schedule">Automatic checking</string>
+    <string name="settings_backup">Backup</string>
+    <string name="export_backup">Export backup</string>
+    <string name="import_backup">Import backup</string>
+
+    <string name="add_keyword">Add keyword</string>
+    <string name="add_source">Add page</string>
+    <string name="label">Label</string>
+    <string name="url">URL</string>
+
+    <string name="auto_check">Check automatically</string>
+    <string name="hearing_reminders">Remind me the evening before a hearing</string>
+    <string name="morning_time">Morning check</string>
+    <string name="evening_time">Evening check</string>
+    <string name="last_check">Last check</string>
+
+    <string name="perm_notif_rationale">Allow notifications so you find out when a case is fixed.</string>
+    <string name="offline_note">All case data is stored on this phone. Only the cause list check needs internet.</string>
+</resources>

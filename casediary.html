@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F5132">
-<title>Zill Law Case Registry</title>
+<title>Causelist Sentinel</title>
 <style>
   :root{
     --brand:#0F5132; --brand-dark:#0A3B24; --brand-light:#D7EADF;
@@ -114,7 +114,7 @@
 <body>
 
 <header>
-  <h1 id="hTitle">Zill Law Case Registry</h1>
+  <h1 id="hTitle">Causelist Sentinel</h1>
   <div class="sub" id="hSub">Lahore High Court</div>
 </header>
 
@@ -181,6 +181,20 @@
 
   <!-- ============================ PENDING =========================== -->
   <section id="tab-pending" class="hidden">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px">
+        <b style="font-size:14px;flex:1">Check pending files automatically</b>
+        <label class="switch" style="margin:0">
+          <input type="checkbox" id="pendingSectionEnabled" onchange="togglePendingSection()">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="note">
+        When on, every pending file below is checked against each cause list you
+        scan. Turn this off to pause fuzzy-matching for the whole list at once —
+        for example while you're cleaning it up — without deleting anything.
+      </div>
+    </div>
     <div class="card">
       <b style="font-size:14px">Add a pending file</b>
       <div class="note">
@@ -277,7 +291,7 @@
 /* ------------------------------------------------------------------ store */
 const KEY = "casediary.v1";
 const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [],
-  settings: { principalSeatOnly: true }, seq: 1 };
+  settings: { principalSeatOnly: true, pendingFilesEnabled: true }, seq: 1 };
 
 function load(){
   try{
@@ -406,7 +420,7 @@ function seedDefaultPending(){
   let changed = false;
   for(const d of DEFAULT_PENDING){
     if(!have.has(normalize(d.title))){
-      S.pending.push({id:nextId(), title:d.title, note:d.note||"", addedAt:Date.now(), enabled:true});
+      S.pending.push({id:nextId(), title:d.title, note:d.note||"", addedAt:Date.now()});
       have.add(normalize(d.title));
       changed = true;
     }
@@ -527,7 +541,7 @@ function compile(keys, cases, pending){
      purely on words it shares with every other file. Each title's OWN rare
      words (appearing in at most 2 pending titles) must always be present;
      only the common words it shares with many other titles may be missed. */
-  const pendingList = (pending || []).filter(pf => pf.enabled !== false);
+  const pendingList = (S.settings.pendingFilesEnabled === false) ? [] : (pending || []);
   const freq = new Map();
   for(const pf of pendingList){
     for(const tok of new Set(pendingTokens(pf.title))) freq.set(tok, (freq.get(tok)||0) + 1);
@@ -610,7 +624,7 @@ function fromInput(v){ if(!v) return 0; const [y,m,d]=v.split("-").map(Number);
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
 const TABS = ["cases","diary","pending","keys","backup"];
-const TAB_TITLES = {cases:"Zill Law Case Registry", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
+const TAB_TITLES = {cases:"Causelist Sentinel", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
 function switchTab(name){
   tab = name;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));
@@ -823,28 +837,29 @@ function renderDiary(){
   document.getElementById("diaryList").innerHTML = html;
 }
 
+function togglePendingSection(){
+  S.settings.pendingFilesEnabled = document.getElementById("pendingSectionEnabled").checked;
+  save(); render();
+}
 function renderPending(){
+  document.getElementById("pendingSectionEnabled").checked = S.settings.pendingFilesEnabled !== false;
   const el = document.getElementById("pendingList");
   if(!S.pending.length){
     el.innerHTML = `<div class="empty">No pending files yet.<br>Add one above — it will be
       checked every time you scan a cause list.</div>`;
     return;
   }
+  const sectionOn = S.settings.pendingFilesEnabled !== false;
   const list = S.pending.slice().sort((a,b)=>b.addedAt-a.addedAt);
   el.innerHTML = `<h2>Pending files<span class="n">${list.length}</span></h2>` +
+    (sectionOn ? "" : `<div class="warnbox">Checking is paused for this whole list — turn it back
+      on above to resume matching these against scanned cause lists.</div>`) +
     list.map(p=>{
       const matches = S.hits.filter(h=>h.pendingId===p.id);
-      const on = p.enabled !== false;
       return `<div class="card">
-        <div style="display:flex;gap:8px;align-items:center">
-          <div class="ttl" style="font-weight:700;flex:1">${esc(p.title)}</div>
-          <label class="switch" title="${on?'Being checked in every scan':'Not being checked'}">
-            <input type="checkbox" ${on?"checked":""} onclick="togglePendingEnabled(${p.id})">
-            <span class="slider"></span>
-          </label>
-        </div>
+        <div class="ttl" style="font-weight:700">${esc(p.title)}</div>
         ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ""}
-        <div class="meta">Added ${esc(fmt(p.addedAt))}${on?"":" · paused — skipped when scanning"}</div>
+        <div class="meta">Added ${esc(fmt(p.addedAt))}</div>
         ${matches.length ? `<span class="pill warn">${matches.length} possible match${matches.length===1?"":"es"} — review in Diary</span>` : ""}
         <div class="row" style="margin-top:10px">
           ${matches.length ? `<button class="btn3" onclick="switchTab('diary')">Review in Diary</button>` : ""}
@@ -853,16 +868,12 @@ function renderPending(){
       </div>`;
     }).join("");
 }
-function togglePendingEnabled(id){
-  const p = S.pending.find(x=>x.id===id);
-  if(p){ p.enabled = p.enabled === false; save(); render(); }
-}
 function addPending(){
   const t = document.getElementById("newPending");
   const n = document.getElementById("newPendingNote");
   const title = t.value.trim();
   if(title.length < 5){ alert("Enter the case title — at least a few words."); return; }
-  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now(), enabled:true});
+  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now()});
   t.value = ""; n.value = "";
   save(); render();
 }
@@ -1098,7 +1109,7 @@ function scanPaste(){
 
   const probes = compile(S.keys, S.cases, S.pending);
   const activeKeyCount = S.keys.filter(k=>k.enabled!==false).length;
-  const activePendingCount = S.pending.filter(p=>p.enabled!==false).length;
+  const activePendingCount = S.settings.pendingFilesEnabled === false ? 0 : S.pending.length;
   const principalSeatOnly = S.settings.principalSeatOnly !== false;
 
   let rows = text.split("\n").map(r=>r.trim()).filter(r=>r.length >= 8);
@@ -1440,7 +1451,7 @@ function importData(ev){
 /* expose for inline handlers */
 Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,saveHearing,
   addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc,
-  switchTab,addPending,removePending,togglePendingEnabled,openSaveDialog,saveHitToCases,saveSelectedHits,
+  switchTab,addPending,removePending,togglePendingSection,openSaveDialog,saveHitToCases,saveSelectedHits,
   toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,toggleFixedSelect,editFixed,updateFixed,dismissPendingHit,
   removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly});
 

@@ -143,25 +143,25 @@ class CauseListScraper(private val context: Context) {
         val now = System.currentTimeMillis()
 
         // First pass: find every matched row and note which ones are bare main
-        // cases, so a C.M./C.M.A. application filed "in" one of them can be
+        // cases, so a C.M./C.M.A. application filed against one of them can be
         // folded back into the main case instead of listed separately.
-        data class MatchedRow(val row: String, val hits: List<Matcher.Hit>, val cm: Boolean, val parent: String?)
+        data class MatchedRow(val row: String, val hits: List<Matcher.Hit>, val cm: Boolean, val parents: List<String>)
         val matchedRows = ArrayList<MatchedRow>()
         val mainCaseSeen = HashSet<String>()
         for (row in rows) {
             val all = Matcher.findHits(row, probes)
             if (all.isEmpty()) continue
             val cm = Matcher.isCmRow(row)
-            val parent = if (cm) Matcher.cmParentRef(row) else null
-            if (!cm) Matcher.ownCaseRef(row)?.let { mainCaseSeen.add(it) }
-            matchedRows.add(MatchedRow(row, all, cm, parent))
+            val parents = if (cm) Matcher.cmParentRefs(row) else emptyList()
+            if (!cm) mainCaseSeen.addAll(Matcher.ownCaseRefs(row))
+            matchedRows.add(MatchedRow(row, all, cm, parents))
         }
 
         val seenCmGroups = HashSet<String>()
-        for ((row, all, cm, parent) in matchedRows) {
-            if (cm && parent != null) {
-                if (mainCaseSeen.contains(parent)) continue // main case also matched — drop the C.M.
-                if (!seenCmGroups.add(parent)) continue // already represented by another C.M. of the same case
+        for ((row, all, cm, parents) in matchedRows) {
+            if (cm && parents.isNotEmpty()) {
+                if (parents.any { mainCaseSeen.contains(it) }) continue // main case also matched — drop the C.M.
+                if (!seenCmGroups.add(parents[0])) continue // already represented by another C.M. of the same case
             }
             // A row that is one of the user's own cases belongs under "My cases"
             // only — a keyword or pending-file match on the same line must not

@@ -151,10 +151,21 @@ class MatcherTest {
     }
 
     @Test
-    fun `pending file title tolerates a missing common word but not its own distinctive words`() {
-        // "Khan" dropped — common across all three pending files, so it's tolerated.
-        val row = "3 | ALPHA ALI VS NADRA | Writ Petition 55555/2026"
+    fun `pending file title tolerates a missing common word on the non-petitioner side`() {
+        // The full petitioner ("Alpha Ali Khan") is present; "NADRA" — common
+        // across all three pending files and not part of the petitioner — is
+        // dropped and tolerated. (The petitioner's own words are never
+        // tolerated as missing — see the exactness test below.)
+        val row = "3 | ALPHA ALI KHAN VS SOMETHING ELSE | Writ Petition 55555/2026"
         assertTrue(pendingHits(row).any { it.pendingId == 5L })
+    }
+
+    @Test
+    fun `a pending file never matches with part of its own petitioner name missing`() {
+        // "Khan" dropped from the petitioner's own name — must not match,
+        // even though "Khan" is common across other pending files too.
+        val row = "3 | ALPHA ALI VS NADRA | Writ Petition 55555/2026"
+        assertFalse(pendingHits(row).any { it.pendingId == 5L })
     }
 
     @Test
@@ -215,14 +226,14 @@ class MatcherTest {
     fun `a C M row is recognised and its parent case is extracted`() {
         val row = "C.M.No.11/2026 in W.P.No.4001/2026 Ali Raza vs State"
         assertTrue(Matcher.isCmRow(row))
-        assertEquals("WP:4001:2026", Matcher.cmParentRef(row))
+        assertTrue(Matcher.cmParentRefs(row).contains("WP:4001:2026"))
     }
 
     @Test
     fun `a bare main case row is not treated as a C M row`() {
         val row = "W.P. No.4001/2026 Ali Raza vs State, hearing today"
         assertFalse(Matcher.isCmRow(row))
-        assertEquals("WP:4001:2026", Matcher.ownCaseRef(row))
+        assertTrue(Matcher.ownCaseRefs(row).contains("WP:4001:2026"))
     }
 
     @Test
@@ -238,13 +249,40 @@ class MatcherTest {
     fun `a C M row without a parseable parent is left ungrouped`() {
         val row = "C.M.No.9/2026 Some Company vs Another"
         assertTrue(Matcher.isCmRow(row))
-        assertEquals(null, Matcher.cmParentRef(row))
+        assertTrue(Matcher.cmParentRefs(row).isEmpty())
     }
 
     @Test
     fun `canonical refs ignore type punctuation and two-digit years`() {
-        val a = Matcher.ownCaseRef("W.P.No.001/26 Someone vs State")
-        val b = Matcher.ownCaseRef("W P 1/2026 Someone vs State")
+        val a = Matcher.ownCaseRefs("W.P.No.001/26 Someone vs State")
+        val b = Matcher.ownCaseRefs("W P 1/2026 Someone vs State")
         assertEquals(a, b)
+    }
+
+    @Test
+    fun `a C M number with the main case folded in as a third segment is recognised`() {
+        // No "in W.P. No X/Y" phrase at all — the parent's number/year is
+        // embedded directly in the C.M.'s own number: app-no/main-no/year.
+        val row = "C.M.No.11/4001/2026 Ali Raza vs State"
+        assertTrue(Matcher.isCmRow(row))
+        assertTrue(Matcher.cmParentRefs(row).contains("*:4001:2026"))
+        // And it lines up with a bare main-case row's own (type-agnostic) ref.
+        val mainRow = "W.P. No.4001/2026 Ali Raza vs State"
+        assertTrue(Matcher.ownCaseRefs(mainRow).contains("*:4001:2026"))
+    }
+
+    // ------------------------------------------------------- pending-file petitioner exactness
+
+    @Test
+    fun `a pending match requires the petitioner to be fully present, not just common words`() {
+        // "NADRA" and "Chairman" are common boilerplate shared by many pending
+        // titles, so on their own they used to be enough to false-positive.
+        // The petitioner's own name must now always be fully present.
+        val onePending = listOf(PendingFile(id = 20, title = "Fahad Rasheed vs NADRA Chairman etc."))
+        val probes = Matcher.compile(emptyList(), emptyList(), onePending)
+        val wrongPetitioner = "Someone Else Totally vs NADRA Chairman etc, hearing"
+        assertTrue(Matcher.findHits(wrongPetitioner, probes).none { it.kind == WatchTerm.KIND_PENDING })
+        val rightPetitioner = "Fahad Rasheed vs NADRA Chairman etc, first hearing"
+        assertTrue(Matcher.findHits(rightPetitioner, probes).any { it.pendingId == 20L })
     }
 }

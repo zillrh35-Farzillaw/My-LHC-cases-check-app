@@ -434,6 +434,15 @@ const STOPWORDS = new Set(["vs","etc","and","the","of","in","re","mst"]);
 function pendingTokens(title){
   return normalize(title).split(" ").filter(t => t.length >= 3 && !STOPWORDS.has(t));
 }
+/* Everything before "vs" in a pending-file title is the petitioner — the
+   client whose case this is. That part must match a scanned row exactly
+   (every one of its words present), no tolerance; only the respondent /
+   boilerplate side of the title ("etc.", repeated department names…)
+   keeps the fuzzy, may-miss-a-common-word matching. */
+function pendingPetitionerTokens(title){
+  const m = title.match(/^(.*?)\bvs\b/i);
+  return new Set(pendingTokens(m ? m[1] : title));
+}
 function allowedMisses(n){
   if(n <= 2) return 0;
   if(n <= 4) return 1;
@@ -479,7 +488,8 @@ function compile(keys, cases, pending){
   for(const pf of pendingList){
     const t = pendingTokens(pf.title);
     if(!t.length) continue;
-    let mustMatch = t.filter(tok => (freq.get(tok)||0) <= 2);
+    const petitionerToks = pendingPetitionerTokens(pf.title);
+    let mustMatch = t.filter(tok => petitionerToks.has(tok) || (freq.get(tok)||0) <= 2);
     if(!mustMatch.length) mustMatch = [t[0]]; // every word is common — anchor on the first anyway
     probes.push({label:pf.title, kind:"PENDING", caseId:0, pendingId:pf.id, tokens:t,
       key:"pending:"+pf.id, fuzzy:true, mustMatch});
@@ -525,13 +535,24 @@ function isOtherBench(row){
    must never be listed as a separate result: if the main case itself also
    turns up in this same scan, the C.M. line is dropped; if the main case
    never turns up on its own, at most one C.M. line for it is kept, standing
-   in for the whole group. */
+   in for the whole group.
+
+   The court prints the parent case two different ways: sometimes spelled
+   out ("C.M.No.11/2026 in W.P.No.4001/2026"), sometimes folded straight
+   into the C.M.'s own number as a third segment ("C.M.No.11/4001/2026" —
+   application-no / main-case-no / year, no "in" at all). Both are handled. */
 const CASE_TYPE_ALT =
   "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
   "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?";
-const CM_LEAD_RE = /^\s*(?:\d+\s*[|.]?\s*)?(?:C\.?\s*M\.?\s*A?\.?|Crl\.?\s*M\.?\s*A\.?)\s*(?:No\.?)?\s*\d+\s*\/\s*\d{2,4}\b/i;
+const CM_DESIGNATION = "(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)";
+const CM_LEAD_RE = new RegExp(
+  "^\\s*(?:\\d+\\s*[|.]?\\s*)?" + CM_DESIGNATION + "\\s*(?:No\\.?)?\\s*\\d+(?:\\s*/\\s*\\d+){1,2}\\b", "i"
+);
 const OWN_REF_RE = new RegExp("\\b(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
 const CM_PARENT_RE = new RegExp("\\bin\\s+(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
+const CM_EMBEDDED_PARENT_RE = new RegExp(
+  CM_DESIGNATION + "\\s*(?:No\\.?)?\\s*\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i"
+);
 
 function canonicalCaseRef(m){
   const type = m[1].replace(/[^a-z]/gi, "").toUpperCase();
@@ -539,9 +560,27 @@ function canonicalCaseRef(m){
   const yr = m[3].length === 2 ? "20" + m[3] : m[3];
   return type + ":" + no + ":" + yr;
 }
+/* Type-agnostic identity: used when the parent's own case-type text isn't
+   printed (the embedded C.M.No.<app>/<main>/<year> form), so a plain
+   number+year is the only thing to match on. */
+function looseCaseRef(no, yr){
+  const n = no.replace(/^0+(?=\d)/, "");
+  const y = yr.length === 2 ? "20" + yr : yr;
+  return "*:" + n + ":" + y;
+}
 function isCmRow(row){ return CM_LEAD_RE.test(row); }
-function ownCaseRef(row){ const m = row.match(OWN_REF_RE); return m ? canonicalCaseRef(m) : null; }
-function cmParentRef(row){ const m = row.match(CM_PARENT_RE); return m ? canonicalCaseRef(m) : null; }
+function ownCaseRefs(row){
+  const m = row.match(OWN_REF_RE);
+  return m ? [canonicalCaseRef(m), looseCaseRef(m[2], m[3])] : [];
+}
+function cmParentRefs(row){
+  const out = [];
+  const m1 = row.match(CM_PARENT_RE);
+  if(m1) out.push(canonicalCaseRef(m1), looseCaseRef(m1[2], m1[3]));
+  const m2 = row.match(CM_EMBEDDED_PARENT_RE);
+  if(m2) out.push(looseCaseRef(m2[1], m2[2]));
+  return out;
+}
 
 function hashOf(parts){
   const joined = parts.map(normalize).join("|");
@@ -1087,20 +1126,20 @@ function scanPaste(){
     const hs = findHits(row, probes);
     if(!hs.length) continue;
     const cm = isCmRow(row);
-    const parent = cm ? cmParentRef(row) : null;
+    const parents = cm ? cmParentRefs(row) : [];
     if(!cm){
-      const own = ownCaseRef(row);
-      if(own) mainCaseSeen.add(own);
+      for(const ref of ownCaseRefs(row)) mainCaseSeen.add(ref);
     }
-    matched.push({row, hs, cm, parent});
+    matched.push({row, hs, cm, parents});
   }
 
   const seenCmGroups = new Set();
-  for(const {row, hs, cm, parent} of matched){
-    if(cm && parent){
-      if(mainCaseSeen.has(parent)){ skippedCm++; continue; }       // main case also matched — drop the C.M.
-      if(seenCmGroups.has(parent)){ skippedCm++; continue; }       // already represented by another C.M. of the same case
-      seenCmGroups.add(parent);
+  for(const {row, hs, cm, parents} of matched){
+    if(cm && parents.length){
+      if(parents.some(p => mainCaseSeen.has(p))){ skippedCm++; continue; }  // main case also matched — drop the C.M.
+      const groupKey = parents[0];
+      if(seenCmGroups.has(groupKey)){ skippedCm++; continue; }             // already represented by another C.M. of the same case
+      seenCmGroups.add(groupKey);
     }
     matchedRows++;
 

@@ -25,6 +25,15 @@ object Matcher {
     private fun pendingTokens(title: String): List<String> =
         normalize(title).split(' ').filter { it.length >= 3 && it !in STOPWORDS }
 
+    private val PETITIONER_SPLIT = Regex("\\bvs\\b", RegexOption.IGNORE_CASE)
+
+    /** Everything before "vs" in a pending-file title is the petitioner — the
+     *  client whose case this is. Those words must match a scanned row
+     *  exactly (see [compile]), no tolerance; only the respondent /
+     *  boilerplate side of the title keeps the fuzzy, may-miss matching. */
+    private fun pendingPetitionerTokens(title: String): Set<String> =
+        pendingTokens(PETITIONER_SPLIT.split(title, limit = 2).firstOrNull() ?: title).toHashSet()
+
     /** How many of a fuzzy probe's tokens are allowed to miss on a row. */
     private fun allowedMisses(n: Int): Int = when {
         n <= 2 -> 0
@@ -150,7 +159,8 @@ object Matcher {
         for (pf in pending) {
             val toks = pendingTokens(pf.title)
             if (toks.isEmpty()) continue
-            var mustMatch = toks.filter { (freq[it] ?: 0) <= 2 }.toHashSet()
+            val petitionerToks = pendingPetitionerTokens(pf.title)
+            var mustMatch = toks.filter { it in petitionerToks || (freq[it] ?: 0) <= 2 }.toHashSet()
             if (mustMatch.isEmpty()) mustMatch = hashSetOf(toks[0])
             out.add(Probe(pf.title, WatchTerm.KIND_PENDING, 0L, pf.id, toks, "pending:${pf.id}", fuzzy = true, mustMatch = mustMatch))
         }
@@ -218,16 +228,26 @@ object Matcher {
      * alongside (or instead of) the main case's own line. It is the same
      * matter, so callers (see [pk.advocate.casediary.work.CauseListScraper])
      * fold it back into the main case instead of listing it separately.
+     *
+     * The court prints the parent case two different ways: sometimes spelled
+     * out ("C.M.No.11/2026 in W.P.No.4001/2026"), sometimes folded straight
+     * into the C.M.'s own number as a third segment ("C.M.No.11/4001/2026" —
+     * application-no / main-case-no / year, no "in" at all). Both are handled.
      */
     private const val CASE_TYPE_ALT =
         "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
             "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?"
+    private const val CM_DESIGNATION = "(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)"
     private val CM_LEAD_RE = Regex(
-        "^\\s*(?:\\d+\\s*[|.]?\\s*)?(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)\\s*(?:No\\.?)?\\s*\\d+\\s*/\\s*\\d{2,4}\\b",
+        "^\\s*(?:\\d+\\s*[|.]?\\s*)?$CM_DESIGNATION\\s*(?:No\\.?)?\\s*\\d+(?:\\s*/\\s*\\d+){1,2}\\b",
         RegexOption.IGNORE_CASE
     )
     private val OWN_REF_RE = Regex("\\b($CASE_TYPE_ALT)\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", RegexOption.IGNORE_CASE)
     private val CM_PARENT_RE = Regex("\\bin\\s+($CASE_TYPE_ALT)\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", RegexOption.IGNORE_CASE)
+    private val CM_EMBEDDED_PARENT_RE = Regex(
+        "$CM_DESIGNATION\\s*(?:No\\.?)?\\s*\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b",
+        RegexOption.IGNORE_CASE
+    )
 
     private fun canonicalCaseRef(m: MatchResult): String {
         val type = m.groupValues[1].filter { it.isLetter() }.uppercase(Locale.ENGLISH)
@@ -236,9 +256,33 @@ object Matcher {
         return "$type:$no:$yr"
     }
 
+    /** Type-agnostic identity: used when the parent's own case-type text isn't
+     *  printed (the embedded C.M.No.<app>/<main>/<year> form), so a plain
+     *  number+year is the only thing to match on. */
+    private fun looseCaseRef(no: String, yr: String): String {
+        val n = no.trimStart('0').ifEmpty { "0" }
+        val y = if (yr.length == 2) "20$yr" else yr
+        return "*:$n:$y"
+    }
+
     fun isCmRow(row: String): Boolean = CM_LEAD_RE.containsMatchIn(row)
-    fun ownCaseRef(row: String): String? = OWN_REF_RE.find(row)?.let { canonicalCaseRef(it) }
-    fun cmParentRef(row: String): String? = CM_PARENT_RE.find(row)?.let { canonicalCaseRef(it) }
+
+    fun ownCaseRefs(row: String): List<String> {
+        val m = OWN_REF_RE.find(row) ?: return emptyList()
+        return listOf(canonicalCaseRef(m), looseCaseRef(m.groupValues[2], m.groupValues[3]))
+    }
+
+    fun cmParentRefs(row: String): List<String> {
+        val out = ArrayList<String>()
+        CM_PARENT_RE.find(row)?.let {
+            out.add(canonicalCaseRef(it))
+            out.add(looseCaseRef(it.groupValues[2], it.groupValues[3]))
+        }
+        CM_EMBEDDED_PARENT_RE.find(row)?.let {
+            out.add(looseCaseRef(it.groupValues[1], it.groupValues[2]))
+        }
+        return out
+    }
 
     /** Stable identity for a cause-list row so it is only notified once. */
     fun hashOf(vararg parts: String): String {

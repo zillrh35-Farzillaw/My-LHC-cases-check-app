@@ -5,6 +5,8 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import pk.advocate.casediary.db.Db
 import pk.advocate.casediary.db.Fixture
+import pk.advocate.casediary.db.TermHit
+import pk.advocate.casediary.util.Prefs
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -105,7 +107,7 @@ class CauseListScraper(private val context: Context) {
     }
 
     private fun scanRows(
-        rows: List<String>,
+        rowsIn: List<String>,
         listDate: String,
         sourceLabel: String,
         sourceUrl: String
@@ -113,21 +115,30 @@ class CauseListScraper(private val context: Context) {
         val terms = db.listWatchTerms(onlyEnabled = true)
         val cases = db.listCases(null, null)
         val pending = db.listPendingFiles()
-        db.insertScanRows(sourceLabel, rows)
+        db.insertScanRows(sourceLabel, rowsIn)
+
+        val prefs = Prefs(context)
+        val rows = if (prefs.principalSeatOnly) rowsIn.filterNot { Matcher.isOtherBench(it) } else rowsIn
+        // Section-level pause: the lawyer can turn off pending-file matching for
+        // the whole list at once (e.g. while tidying it up) without deleting it.
+        val activePending = if (prefs.pendingFilesEnabled) pending else emptyList()
+
         if (terms.isEmpty() && cases.isEmpty() && pending.isEmpty()) {
             return Result(
-                0, 0, rows.size,
+                0, 0, rowsIn.size,
                 listOf("Nothing to look for yet — add a keyword, a case or a pending file first"),
                 emptyList()
             )
         }
 
         // Tokenise the terms once, not once per row.
-        val probes = Matcher.compile(terms, cases, pending)
+        val probes = Matcher.compile(terms, cases, activePending)
 
-        var newHits = 0
         var totalHits = 0
         val lines = ArrayList<String>()
+        // One Fixture per row — every keyword, case number and pending file
+        // that matched the same line is merged into that row's term list
+        // instead of duplicating the row per keyword.
         val found = ArrayList<Fixture>()
         val now = System.currentTimeMillis()
 
@@ -139,43 +150,50 @@ class CauseListScraper(private val context: Context) {
             // duplicate it.
             val mine = all.filter { it.caseId != 0L }
             val hits = if (mine.isNotEmpty()) mine else all
+            totalHits += hits.size
             val clipped = if (row.length > 400) row.substring(0, 400) + "…" else row
+
+            val caseId = hits.firstOrNull { it.caseId != 0L }?.caseId ?: 0L
+            val pendingId = if (caseId == 0L) hits.firstOrNull { it.pendingId != 0L }?.pendingId ?: 0L else 0L
+            val seenTerms = HashSet<String>()
+            val termHits = ArrayList<TermHit>()
             for (h in hits) {
-                totalHits++
-                found.add(
-                    Fixture(
-                        hash = Matcher.hashOf(sourceUrl, listDate, clipped, h.term, h.pendingId.toString()),
-                        caseId = h.caseId,
-                        pendingId = h.pendingId,
-                        sourceLabel = sourceLabel,
-                        sourceUrl = sourceUrl,
-                        listDate = listDate,
-                        raw = clipped,
-                        matchedTerm = h.term,
-                        matchedKind = h.kind,
-                        foundAt = now,
-                        seen = false
-                    )
-                )
+                val key = Matcher.normalize(h.term)
+                if (!seenTerms.add(key)) continue
+                termHits.add(TermHit(h.term, h.kind))
             }
+
+            found.add(
+                Fixture(
+                    hash = Matcher.hashOf(sourceUrl, listDate, clipped),
+                    caseId = caseId,
+                    pendingId = pendingId,
+                    sourceLabel = sourceLabel,
+                    sourceUrl = sourceUrl,
+                    listDate = listDate,
+                    raw = clipped,
+                    terms = termHits,
+                    foundAt = now,
+                    seen = false
+                )
+            )
         }
 
         // One transaction for the whole page rather than one per row.
         val inserted = db.insertFixtures(found)
         var approvalHits = 0
         for (f in inserted) {
-            newHits++
             if (f.needsApproval()) approvalHits++
             lines.add(
                 buildString {
-                    append(f.matchedTerm).append(" — ").append(sourceLabel)
+                    append(f.termsLabel().ifBlank { "Match" }).append(" — ").append(sourceLabel)
                     if (listDate.isNotBlank()) append(" (").append(listDate).append(")")
                     if (f.needsApproval()) append(" — needs approval")
                 }
             )
         }
 
-        return Result(newHits, totalHits, rows.size, emptyList(), lines, approvalHits)
+        return Result(inserted.size, totalHits, rowsIn.size, emptyList(), lines, approvalHits)
     }
 
     /**

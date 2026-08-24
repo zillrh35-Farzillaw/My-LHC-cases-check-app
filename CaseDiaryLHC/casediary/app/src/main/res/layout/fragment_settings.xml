@@ -115,6 +115,13 @@
                     android:layout_marginTop="4dp"
                     android:text="Scan automatically in the built-in browser" />
 
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swPrincipalSeat"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Only check Principal Seat (Lahore) — skip Bahawalpur / Multan / Rawalpindi bench listings" />
+
                 <TextView
                     android:id="@+id/lastCheck"
                     android:layout_width="match_parent"

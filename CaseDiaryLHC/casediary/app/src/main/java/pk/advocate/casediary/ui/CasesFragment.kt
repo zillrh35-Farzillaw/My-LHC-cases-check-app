@@ -148,6 +148,7 @@ class CaseAdapter(private val onClick: (Case) -> Unit) :
         if (c.stage.isNotBlank()) bits.add(c.stage)
         if (c.clientName.isNotBlank()) bits.add("Client: ${c.clientName}")
         if (fixedCaseIds.contains(c.id)) bits.add("✓ Fixed in cause list")
+        if (!c.watched) bits.add("Not auto-checked")
         holder.b.meta.text = bits.joinToString(" · ")
         holder.b.meta.visibility = if (bits.isEmpty()) View.GONE else View.VISIBLE
 

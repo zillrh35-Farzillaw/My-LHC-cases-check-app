@@ -84,6 +84,7 @@ class CaseDetailActivity : AppCompatActivity() {
             )
         }
         lines.add("Status: ${c.status.lowercase().replaceFirstChar { it.uppercase() }}")
+        if (!c.watched) lines.add("Not checked automatically when scanning cause lists")
         val fixedEntry = db.listFixedCases().find { it.caseId == caseId }
         if (fixedEntry != null) {
             lines.add(

@@ -88,6 +88,11 @@ class SettingsFragment : Fragment() {
             prefs.autoScanInBrowser = checked
         }
 
+        b.swPrincipalSeat.isChecked = prefs.principalSeatOnly
+        b.swPrincipalSeat.setOnCheckedChangeListener { _, checked ->
+            prefs.principalSeatOnly = checked
+        }
+
         b.btnMorning.setOnClickListener {
             pickTime(prefs.morningHour, prefs.morningMinute) { h, m ->
                 prefs.morningHour = h

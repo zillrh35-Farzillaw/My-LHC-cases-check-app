@@ -39,7 +39,8 @@ class Db private constructor(context: Context) :
                 fee_received REAL NOT NULL DEFAULT 0,
                 notes TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL DEFAULT 0
+                updated_at INTEGER NOT NULL DEFAULT 0,
+                watched INTEGER NOT NULL DEFAULT 1
             )
             """.trimIndent()
         )
@@ -67,8 +68,7 @@ class Db private constructor(context: Context) :
                 source_url TEXT NOT NULL DEFAULT '',
                 list_date TEXT NOT NULL DEFAULT '',
                 raw TEXT NOT NULL DEFAULT '',
-                matched_term TEXT NOT NULL DEFAULT '',
-                matched_kind TEXT NOT NULL DEFAULT '',
+                terms_json TEXT NOT NULL DEFAULT '[]',
                 found_at INTEGER NOT NULL DEFAULT 0,
                 seen INTEGER NOT NULL DEFAULT 0
             )
@@ -199,7 +199,99 @@ class Db private constructor(context: Context) :
             } catch (_: Exception) { /* already present */ }
             seedDefaultPending(db)
         }
+        if (oldVersion < 5) {
+            try {
+                db.execSQL("ALTER TABLE cases ADD COLUMN watched INTEGER NOT NULL DEFAULT 1")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE fixtures ADD COLUMN terms_json TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            migrateFixtureTerms(db)
+        }
         createIndexes(db)
+    }
+
+    /**
+     * Pre-v5, every matched keyword on a row became its own [fixtures] row, so a
+     * line hit by three keywords showed up three times in the Diary. This folds
+     * every such row sharing the same page + line back into a single row with
+     * all its matched terms kept together in terms_json, and drops the rest —
+     * exactly the consolidation new scans do going forward (see
+     * CauseListScraper.scanRows).
+     */
+    private fun migrateFixtureTerms(db: SQLiteDatabase) {
+        data class OldRow(
+            val id: Long, val caseId: Long, val pendingId: Long,
+            val sourceUrl: String, val listDate: String, val raw: String,
+            val term: String, val kind: String, val foundAt: Long, val seen: Boolean
+        )
+        val olds = ArrayList<OldRow>()
+        db.rawQuery(
+            "SELECT id, case_id, pending_id, source_url, list_date, raw, matched_term, matched_kind, found_at, seen, terms_json FROM fixtures",
+            null
+        ).use { cur ->
+            while (cur.moveToNext()) {
+                val termsJson = cur.getString(10)
+                if (!termsJson.isNullOrBlank() && termsJson != "[]") continue // already migrated
+                olds.add(
+                    OldRow(
+                        id = cur.getLong(0), caseId = cur.getLong(1), pendingId = cur.getLong(2),
+                        sourceUrl = cur.getString(3) ?: "", listDate = cur.getString(4) ?: "",
+                        raw = cur.getString(5) ?: "", term = cur.getString(6) ?: "",
+                        kind = cur.getString(7) ?: "", foundAt = cur.getLong(8), seen = cur.getInt(9) == 1
+                    )
+                )
+            }
+        }
+        if (olds.isEmpty()) return
+
+        class Group(val sourceUrl: String, val listDate: String, val raw: String) {
+            var caseId = 0L
+            var pendingId = 0L
+            var foundAt = 0L
+            var seen = true
+            val ids = ArrayList<Long>()
+            val terms = LinkedHashMap<String, org.json.JSONObject>() // normalized term -> {term, kind}
+        }
+        val groups = LinkedHashMap<String, Group>()
+        for (o in olds) {
+            val key = "${o.sourceUrl}|${o.listDate}|${pk.advocate.casediary.work.Matcher.normalize(o.raw)}"
+            val g = groups.getOrPut(key) { Group(o.sourceUrl, o.listDate, o.raw) }
+            g.ids.add(o.id)
+            if (o.caseId != 0L) g.caseId = o.caseId
+            if (o.pendingId != 0L && g.caseId == 0L) g.pendingId = o.pendingId
+            if (o.foundAt > g.foundAt) g.foundAt = o.foundAt
+            if (!o.seen) g.seen = false
+            if (o.term.isNotBlank()) {
+                val nk = pk.advocate.casediary.work.Matcher.normalize(o.term)
+                g.terms.putIfAbsent(nk, org.json.JSONObject().put("term", o.term).put("kind", o.kind))
+            }
+        }
+
+        db.beginTransaction()
+        try {
+            for ((_, g) in groups) {
+                val survivorId = g.ids.minOrNull() ?: continue
+                val jsonArray = org.json.JSONArray()
+                for (t in g.terms.values) jsonArray.put(t)
+                val cv = ContentValues().apply {
+                    put("hash", pk.advocate.casediary.work.Matcher.hashOf(g.sourceUrl, g.listDate, g.raw))
+                    put("case_id", g.caseId)
+                    put("pending_id", g.pendingId)
+                    put("terms_json", jsonArray.toString())
+                    put("found_at", g.foundAt)
+                    put("seen", if (g.seen) 1 else 0)
+                }
+                db.update("fixtures", cv, "id=?", arrayOf(survivorId.toString()))
+                for (dupId in g.ids) {
+                    if (dupId == survivorId) continue
+                    db.delete("fixtures", "id=?", arrayOf(dupId.toString()))
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     private fun createIndexes(db: SQLiteDatabase) {
@@ -402,6 +494,7 @@ class Db private constructor(context: Context) :
             put("fee_received", c.feeReceived)
             put("notes", c.notes)
             put("updated_at", now)
+            put("watched", if (c.watched) 1 else 0)
         }
         return if (c.id == 0L) {
             cv.put("created_at", now)
@@ -484,7 +577,8 @@ class Db private constructor(context: Context) :
         feeReceived = cur.getDouble(cur.getColumnIndexOrThrow("fee_received")),
         notes = cur.getString(cur.getColumnIndexOrThrow("notes")),
         createdAt = cur.getLong(cur.getColumnIndexOrThrow("created_at")),
-        updatedAt = cur.getLong(cur.getColumnIndexOrThrow("updated_at"))
+        updatedAt = cur.getLong(cur.getColumnIndexOrThrow("updated_at")),
+        watched = cur.getColumnIndex("watched").let { it < 0 || cur.getInt(it) == 1 }
     )
 
     // ------------------------------------------------------------- hearings
@@ -534,9 +628,10 @@ class Db private constructor(context: Context) :
     // ------------------------------------------------------------- fixtures
 
     /**
-     * Insert a page's worth of hits in one transaction and return only the ones
-     * that were genuinely new. Doing this row-by-row costs a separate fsync per
-     * insert, which is what makes a large cause list feel slow.
+     * Insert a page's worth of rows in one transaction and return only the ones
+     * that were genuinely new (or gained a newly-matched term). Doing this
+     * row-by-row costs a separate fsync per insert, which is what makes a large
+     * cause list feel slow.
      */
     fun insertFixtures(list: List<Fixture>): List<Fixture> {
         if (list.isEmpty()) return emptyList()
@@ -554,25 +649,75 @@ class Db private constructor(context: Context) :
         return fresh
     }
 
-    /** @return true if this row was new (and therefore worth notifying about) */
+    /**
+     * A row is identified purely by its (source, list date, text) hash — never
+     * by which term matched — so the same cause-list line is always one
+     * [fixtures] row. If the hash already exists (this exact line was seen on
+     * an earlier scan), any newly-matched terms are merged into it instead of
+     * creating a duplicate row.
+     *
+     * @return true if this row is new, or gained a term it did not have before
+     *   (either way, worth notifying about / showing as "fresh").
+     */
     fun insertFixtureIfNew(f: Fixture): Boolean {
-        val cv = ContentValues().apply {
-            put("hash", f.hash)
-            put("case_id", f.caseId)
-            put("pending_id", f.pendingId)
-            put("source_label", f.sourceLabel)
-            put("source_url", f.sourceUrl)
-            put("list_date", f.listDate)
-            put("raw", f.raw)
-            put("matched_term", f.matchedTerm)
-            put("matched_kind", f.matchedKind)
-            put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
-            put("seen", if (f.seen) 1 else 0)
+        val db = writableDatabase
+        val existingId = db.rawQuery("SELECT id, terms_json FROM fixtures WHERE hash=?", arrayOf(f.hash))
+            .use { cur -> if (cur.moveToFirst()) cur.getLong(0) to cur.getString(1) else null }
+
+        if (existingId == null) {
+            val cv = ContentValues().apply {
+                put("hash", f.hash)
+                put("case_id", f.caseId)
+                put("pending_id", f.pendingId)
+                put("source_label", f.sourceLabel)
+                put("source_url", f.sourceUrl)
+                put("list_date", f.listDate)
+                put("raw", f.raw)
+                put("terms_json", termsToJson(f.terms))
+                put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
+                put("seen", if (f.seen) 1 else 0)
+            }
+            return db.insertWithOnConflict("fixtures", null, cv, SQLiteDatabase.CONFLICT_IGNORE) != -1L
         }
-        val id = writableDatabase.insertWithOnConflict(
-            "fixtures", null, cv, SQLiteDatabase.CONFLICT_IGNORE
-        )
-        return id != -1L
+
+        val (id, existingTermsJson) = existingId
+        val existingTerms = jsonToTerms(existingTermsJson).toMutableList()
+        var added = false
+        for (t in f.terms) {
+            if (existingTerms.none { pk.advocate.casediary.work.Matcher.normalize(it.term) == pk.advocate.casediary.work.Matcher.normalize(t.term) }) {
+                existingTerms.add(t)
+                added = true
+            }
+        }
+        if (!added && f.caseId == 0L && f.pendingId == 0L) return false
+
+        val cv = ContentValues().apply {
+            put("terms_json", termsToJson(existingTerms))
+            if (f.caseId != 0L) put("case_id", f.caseId)
+            if (f.pendingId != 0L) put("pending_id", f.pendingId)
+            if (added) put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
+        }
+        db.update("fixtures", cv, "id=?", arrayOf(id.toString()))
+        return added
+    }
+
+    private fun termsToJson(terms: List<TermHit>): String {
+        val arr = org.json.JSONArray()
+        for (t in terms) arr.put(org.json.JSONObject().put("term", t.term).put("kind", t.kind))
+        return arr.toString()
+    }
+
+    private fun jsonToTerms(json: String?): List<TermHit> {
+        if (json.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                TermHit(o.optString("term"), o.optString("kind"))
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun listFixtures(limit: Int = 300): List<Fixture> {
@@ -591,8 +736,7 @@ class Db private constructor(context: Context) :
                         sourceUrl = cur.getString(cur.getColumnIndexOrThrow("source_url")),
                         listDate = cur.getString(cur.getColumnIndexOrThrow("list_date")),
                         raw = cur.getString(cur.getColumnIndexOrThrow("raw")),
-                        matchedTerm = cur.getString(cur.getColumnIndexOrThrow("matched_term")),
-                        matchedKind = cur.getString(cur.getColumnIndexOrThrow("matched_kind")),
+                        terms = jsonToTerms(cur.getString(cur.getColumnIndexOrThrow("terms_json"))),
                         foundAt = cur.getLong(cur.getColumnIndexOrThrow("found_at")),
                         seen = cur.getInt(cur.getColumnIndexOrThrow("seen")) == 1
                     )
@@ -858,7 +1002,7 @@ class Db private constructor(context: Context) :
 
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 4
+        private const val VERSION = 5
 
         @Volatile
         private var instance: Db? = null

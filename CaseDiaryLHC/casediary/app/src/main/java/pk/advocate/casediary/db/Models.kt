@@ -18,7 +18,9 @@ data class Case(
     var feeReceived: Double = 0.0,
     var notes: String = "",
     var createdAt: Long = 0L,
-    var updatedAt: Long = 0L
+    var updatedAt: Long = 0L,
+    /** When false, this case's number/party is skipped while scanning cause lists. */
+    var watched: Boolean = true
 ) {
     /** "W.P. 12345/2025" */
     fun caseRef(): String {
@@ -59,9 +61,16 @@ data class Hearing(
     var createdAt: Long = 0L
 )
 
+/** One keyword/case/pending-file term that matched a row, kept alongside its kind. */
+data class TermHit(val term: String, val kind: String)
+
 /**
  * A hit found in a cause list — either by the background scraper or by
  * scanning a page in the in-app browser.
+ *
+ * One row is one [Fixture], even when several keywords, a saved case number
+ * and a pending file all match the same line — every term that matched is
+ * kept in [terms] instead of duplicating the row per keyword.
  */
 data class Fixture(
     var id: Long = 0,
@@ -72,9 +81,7 @@ data class Fixture(
     var sourceUrl: String = "",
     var listDate: String = "",      // whatever date text was detected on the page
     var raw: String = "",
-    var matchedTerm: String = "",
-    /** WatchTerm.KIND_* — what kind of keyword caught this row. */
-    var matchedKind: String = "",
+    var terms: List<TermHit> = emptyList(),
     var foundAt: Long = 0L,
     var seen: Boolean = false
 ) {
@@ -83,6 +90,12 @@ data class Fixture(
 
     /** True when this row is a fuzzy match against a pending file, awaiting approval. */
     fun needsApproval(): Boolean = pendingId != 0L
+
+    /** All matched terms joined for display, e.g. "Ali Raza  ·  NADRA". */
+    fun termsLabel(): String = terms.joinToString("  ·  ") { it.term }
+
+    /** Distinct kind labels across every matched term, for display. */
+    fun kinds(): List<String> = terms.map { it.kind }.distinct()
 }
 
 /** A keyword the scraper looks for in cause list rows. */

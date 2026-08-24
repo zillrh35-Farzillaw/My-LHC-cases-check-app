@@ -51,6 +51,16 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(K_AUTOSCAN, true)
         set(v) = sp.edit().putBoolean(K_AUTOSCAN, v).apply()
 
+    /** Skip Bahawalpur / Multan / Rawalpindi bench lines while scanning — on by default. */
+    var principalSeatOnly: Boolean
+        get() = sp.getBoolean(K_PRINCIPAL_SEAT, true)
+        set(v) = sp.edit().putBoolean(K_PRINCIPAL_SEAT, v).apply()
+
+    /** Whole-section on/off for pending-file matching — on by default. */
+    var pendingFilesEnabled: Boolean
+        get() = sp.getBoolean(K_PENDING_ENABLED, true)
+        set(v) = sp.edit().putBoolean(K_PENDING_ENABLED, v).apply()
+
     companion object {
         private const val K_AUTO = "auto_check"
         private const val K_EVE_H = "eve_h"
@@ -61,5 +71,7 @@ class Prefs(context: Context) {
         private const val K_LAST_AT = "last_check_at"
         private const val K_LAST_RES = "last_check_result"
         private const val K_AUTOSCAN = "auto_scan_browser"
+        private const val K_PRINCIPAL_SEAT = "principal_seat_only"
+        private const val K_PENDING_ENABLED = "pending_files_enabled"
     }
 }

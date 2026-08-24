@@ -82,6 +82,39 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <LinearLayout
+        android:id="@+id/selectionActions"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        app:layout_constraintTop_toBottomOf="@id/status"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSelectAll"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:text="Select all" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearSelected"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:textColor="@color/danger"
+            android:visibility="gone"
+            android:text="Clear selected" />
+    </LinearLayout>
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSaveSelected"
         android:layout_width="0dp"
@@ -92,7 +125,7 @@
         android:textSize="12sp"
         android:visibility="gone"
         android:text="Save selected to My Cases"
-        app:layout_constraintTop_toBottomOf="@id/status"
+        app:layout_constraintTop_toBottomOf="@id/selectionActions"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

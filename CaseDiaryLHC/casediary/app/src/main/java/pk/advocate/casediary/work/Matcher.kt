@@ -118,6 +118,7 @@ object Matcher {
 
         for (c in cases) {
             if (c.status == Case.STATUS_ARCHIVED) continue
+            if (!c.watched) continue
             val ref = c.caseRef()
 
             // A case number plus its year is the strongest, most precise signal,
@@ -200,6 +201,16 @@ object Matcher {
     /** Convenience for one-off checks and tests; compiles then matches. */
     fun findHits(row: String, terms: List<WatchTerm>, cases: List<Case>): List<Hit> =
         findHits(row, compile(terms, cases))
+
+    private val OTHER_BENCH = Regex("\\b(bahawalpur|multan|rawalpindi)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
+     * the same cause list as Principal Seat (Lahore) cases. Callers can skip
+     * them via [pk.advocate.casediary.util.Prefs.principalSeatOnly] — on by
+     * default, since most practices here only run at Lahore.
+     */
+    fun isOtherBench(row: String): Boolean = OTHER_BENCH.containsMatchIn(row)
 
     /** Stable identity for a cause-list row so it is only notified once. */
     fun hashOf(vararg parts: String): String {

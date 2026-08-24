@@ -59,6 +59,7 @@ class CaseEditActivity : AppCompatActivity() {
         if (model.feeTotal > 0) b.feeTotal.setText(model.feeTotal.toString())
         if (model.feeReceived > 0) b.feeReceived.setText(model.feeReceived.toString())
         b.notes.setText(model.notes)
+        b.swWatched.isChecked = model.watched
 
         when (model.status) {
             Case.STATUS_DECIDED -> b.stDecided.isChecked = true
@@ -107,6 +108,7 @@ class CaseEditActivity : AppCompatActivity() {
         model.feeTotal = b.feeTotal.text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0
         model.feeReceived = b.feeReceived.text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0
         model.notes = b.notes.text?.toString()?.trim().orEmpty()
+        model.watched = b.swWatched.isChecked
         model.status = when {
             b.stDecided.isChecked -> Case.STATUS_DECIDED
             b.stArchived.isChecked -> Case.STATUS_ARCHIVED

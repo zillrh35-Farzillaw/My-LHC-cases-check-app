@@ -189,4 +189,22 @@ class MatcherTest {
         assertEquals(WatchTerm.PRIORITY_PRIMARY, t.priority)
         assertTrue(t.builtin)
     }
+
+    // ------------------------------------------------------- watch switches / bench filter
+
+    @Test
+    fun `a case with watched off is skipped by compile`() {
+        val unwatched = listOf(cases[0].copy(watched = false))
+        val row = "1 | W.P. No. 12345 / 2025 | Muhammad Bilal Vs. The State"
+        val hits = Matcher.findHits(row, Matcher.compile(emptyList(), unwatched))
+        assertTrue(hits.none { it.caseId == 10L })
+    }
+
+    @Test
+    fun `bahawalpur multan and rawalpindi bench lines are detected`() {
+        assertTrue(Matcher.isOtherBench("1 | W.P. 5/2026 | Someone vs State | Bahawalpur Bench"))
+        assertTrue(Matcher.isOtherBench("2 | Crl. Misc. 6/2026 | Multan Bench matter"))
+        assertTrue(Matcher.isOtherBench("3 | C.R. 7/2026 | Rawalpindi Bench listing"))
+        assertFalse(Matcher.isOtherBench("4 | W.P. 8/2026 | Lahore principal seat matter"))
+    }
 }

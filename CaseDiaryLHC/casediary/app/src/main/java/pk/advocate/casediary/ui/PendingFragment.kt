@@ -11,6 +11,7 @@ import pk.advocate.casediary.databinding.FragmentPendingBinding
 import pk.advocate.casediary.databinding.ItemPendingBinding
 import pk.advocate.casediary.db.Db
 import pk.advocate.casediary.util.Dates
+import pk.advocate.casediary.util.Prefs
 
 /**
  * Case files the lawyer already holds but which have not been fixed (listed)
@@ -21,6 +22,7 @@ class PendingFragment : Fragment() {
     private var _b: FragmentPendingBinding? = null
     private val b get() = _b!!
     private lateinit var db: Db
+    private lateinit var prefs: Prefs
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -33,7 +35,13 @@ class PendingFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         db = Db.get(requireContext())
+        prefs = Prefs(requireContext())
         b.btnAdd.setOnClickListener { addPending() }
+        b.swPendingSection.isChecked = prefs.pendingFilesEnabled
+        b.swPendingSection.setOnCheckedChangeListener { _, checked ->
+            prefs.pendingFilesEnabled = checked
+            render()
+        }
         render()
     }
 

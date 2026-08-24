@@ -50,6 +50,7 @@ class DiaryFragment : Fragment() {
     /** Transient (not persisted) selection state for bulk actions. */
     private val selectedHits = HashSet<Long>()
     private val selectedFixed = HashSet<Long>()
+    private var selectableHitIds: List<Long> = emptyList()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -104,6 +105,8 @@ class DiaryFragment : Fragment() {
         b.btnSearch.setOnClickListener { searchDialog() }
         b.btnExportPdf.setOnClickListener { exportPdf() }
         b.btnSaveSelected.setOnClickListener { saveSelectedHits() }
+        b.btnSelectAll.setOnClickListener { selectAllHits() }
+        b.btnClearSelected.setOnClickListener { confirmClearSelected() }
         b.swipe.setOnRefreshListener { runCheck() }
 
         // Long-press the status line to wipe the hit history.
@@ -130,11 +133,12 @@ class DiaryFragment : Fragment() {
 
         for (f in db.listFixtures()) {
             if (f.needsApproval()) {
+                val pendingTitle = if (f.pendingId != 0L) db.listPendingFiles().find { it.id == f.pendingId }?.title else null
                 approval.add(
                     DiaryRow.Approval(
                         fixtureId = f.id,
                         pendingId = f.pendingId,
-                        headline = f.matchedTerm.ifBlank { "Pending file match" },
+                        headline = pendingTitle ?: f.termsLabel().ifBlank { "Pending file match" },
                         detail = f.raw,
                         whenText = Dates.fmtStamp(f.foundAt)
                     )
@@ -145,12 +149,13 @@ class DiaryFragment : Fragment() {
                 fixtureId = f.id,
                 badge = f.sourceLabel.ifBlank { "Cause list" },
                 whenText = Dates.fmtStamp(f.foundAt),
-                headline = f.matchedTerm.ifBlank { "Match" },
+                headline = f.termsLabel().ifBlank { "Match" },
                 detail = f.raw,
                 listDate = f.listDate,
                 url = f.sourceUrl,
-                kind = kindLabel(f.matchedKind),
-                caseId = f.caseId
+                kind = f.kinds().joinToString(", ") { kindLabel(it) },
+                caseId = f.caseId,
+                multiTerm = f.terms.size > 1
             )
             if (f.isMine()) mine.add(row) else others.add(row)
         }
@@ -186,6 +191,10 @@ class DiaryFragment : Fragment() {
                 )
             )
         }
+
+        selectableHitIds = (approval.map { (it as DiaryRow.Approval).fixtureId } +
+            mine.map { (it as DiaryRow.Hit).fixtureId } +
+            others.map { (it as DiaryRow.Hit).fixtureId })
 
         val rows = ArrayList<DiaryRow>()
         if (approval.isNotEmpty()) {
@@ -226,6 +235,30 @@ class DiaryFragment : Fragment() {
         } else {
             b.btnSaveSelected.visibility = View.GONE
         }
+
+        b.btnSelectAll.visibility = if (selectableHitIds.isNotEmpty()) View.VISIBLE else View.GONE
+        b.btnSelectAll.text = "Select all (${selectableHitIds.size})"
+        b.btnClearSelected.visibility = if (selectedHits.isNotEmpty()) View.VISIBLE else View.GONE
+        b.btnClearSelected.text = "Clear ${selectedHits.size} selected"
+    }
+
+    private fun selectAllHits() {
+        selectedHits.addAll(selectableHitIds)
+        reload()
+    }
+
+    private fun confirmClearSelected() {
+        if (selectedHits.isEmpty()) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Remove ${selectedHits.size} selected match(es)?")
+            .setMessage("Your cases are not touched.")
+            .setPositiveButton("Remove") { _, _ ->
+                for (id in HashSet(selectedHits)) db.deleteFixture(id)
+                selectedHits.clear()
+                reload()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun kindLabel(kind: String): String = when (kind) {
@@ -277,12 +310,18 @@ class DiaryFragment : Fragment() {
     }
 
     private fun showHit(row: DiaryRow.Hit) {
+        val savedCase = if (row.caseId != 0L) db.getCase(row.caseId) else null
         val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(row.headline)
             .setMessage(
                 buildString {
                     append(row.detail)
                     append("\n\n")
+                    if (savedCase != null) {
+                        if (savedCase.court.isNotBlank()) append("Bench: ${savedCase.court}\n")
+                        if (savedCase.judge.isNotBlank()) append("Judge / court: ${savedCase.judge}\n")
+                        if (savedCase.stage.isNotBlank()) append("Stage: ${savedCase.stage}\n")
+                    }
                     append("Source: ${row.badge}")
                     if (row.kind.isNotBlank()) append("\nMatched on: ${row.kind}")
                     if (row.listDate.isNotBlank()) append("\nList date: ${row.listDate}")
@@ -305,7 +344,7 @@ class DiaryFragment : Fragment() {
         val savedCase = if (f.caseId != 0L) db.getCase(f.caseId) else null
         val defaultTitle = pending?.title
             ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
-            ?: f.matchedTerm
+            ?: f.termsLabel()
 
         val container = LinearLayout(requireContext())
         container.orientation = LinearLayout.VERTICAL
@@ -367,7 +406,7 @@ class DiaryFragment : Fragment() {
             val savedCase = if (f.caseId != 0L) db.getCase(f.caseId) else null
             val titleNo = pending?.title
                 ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
-                ?: f.matchedTerm
+                ?: f.termsLabel()
             db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.raw, caseId = f.caseId))
             if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
             db.deleteFixture(f.id)
@@ -544,7 +583,8 @@ sealed class DiaryRow {
         val listDate: String,
         val url: String,
         val kind: String,
-        val caseId: Long
+        val caseId: Long,
+        val multiTerm: Boolean = false
     ) : DiaryRow()
 
     data class Approval(
@@ -628,7 +668,7 @@ class DiaryAdapter(
             }
             is DiaryRow.Hit -> {
                 val v = holder as RowVH
-                v.b.badge.text = row.badge
+                v.b.badge.text = if (row.multiTerm) "${row.badge} · multiple keywords" else row.badge
                 v.b.whenText.text =
                     if (row.kind.isBlank()) row.whenText else "${row.kind} · ${row.whenText}"
                 v.b.headline.text = if (isHitSelected(row.fixtureId)) "☑ ${row.headline}" else row.headline

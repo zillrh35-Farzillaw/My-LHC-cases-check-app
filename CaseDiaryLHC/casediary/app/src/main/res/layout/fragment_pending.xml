@@ -19,6 +19,27 @@
                 android:orientation="vertical"
                 android:padding="14dp">
 
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/swPendingSection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="Check pending files automatically" />
+
+                <TextView
+                    style="@style/SectionCaption"
+                    android:text="When on, every pending file below is checked against each cause list you scan. Turn this off to pause matching for the whole list at once, without deleting anything." />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView style="@style/CardSection">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp">
+
                 <TextView style="@style/SectionTitle" android:text="@string/add_pending" />
                 <TextView
                     style="@style/SectionCaption"

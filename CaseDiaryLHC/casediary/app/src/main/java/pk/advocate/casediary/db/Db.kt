@@ -336,86 +336,16 @@ class Db private constructor(context: Context) :
 
 
     /**
-     * The 73 files supplied as "pending / yet to be fixed" -- seeded once,
-     * verbatim from the lawyer's own document, so they are being checked from
-     * day one. Idempotent: skips any title already present.
+     * Pending files used to be seeded here from a client-name list supplied
+     * early on. That data has been removed from source — this repo is
+     * public, and real client/party names have no business sitting in
+     * public source code. Nothing already saved on a phone is affected (it
+     * lives in that phone's local database, not here); a brand-new install
+     * just starts with an empty Pending Files list, same as Cases and
+     * Keywords always have. Idempotent: skips any title already present.
      */
     private fun seedDefaultPending(db: SQLiteDatabase) {
-        val defaults = listOf(
-            "Ali Ahmad vs FOP etc." to "",
-            "Salikha Bibi vs GOP etc." to "",
-            "Ghazanfar Ali Khan vs NADRA etc." to "",
-            "Mubeen vs DG NADRA etc." to "",
-            "Awais Ali vs NADRA etc." to "",
-            "Syed Wasif Abbas Zaidi vs NADRA etc." to "",
-            "Muhammad Qamar etc. vs Amir Nadeem Najami, AD Operations etc." to "",
-            "Maqbool vs Chairman NADRA etc." to "",
-            "Bibi Tareena vs FOP etc." to "",
-            "Gulnaz Bibi Vs GOP." to "",
-            "Mst. Maryam Bibi Vs NADRA etc." to "",
-            "Shahid Mehmood Vs FOP." to "",
-            "Ghulam Ghous Vs DG Immigration etc." to "",
-            "Muhammad Aamir Vs FOP etc." to "",
-            "Abdul Rehman Vs NADRA etc." to "",
-            "Khalil Ahmad Vs NADRA etc." to "",
-            "Abdul Mateen vs NADRA etc" to "Never fixed or filed in High Court (precautionary), Important case, might fix in future.",
-            "Mst. Salma Bibi vs NADRA etc." to "",
-            "Noreen vs NADRA Lahore etc." to "",
-            "Arshad Ali vs FOP etc." to "",
-            "Asma Yousaf vs Public at Large etc." to "",
-            "Irfan Islam vs GOP etc." to "",
-            "Sajjad vs FOP etc." to "",
-            "Multan Khan vs Chairman NADRA etc." to "",
-            "Sultan Zari vs Chairman NADRA etc." to "",
-            "Waqar Ahmad vs NADRA etc." to "",
-            "Muhammad Ali vs GOP etc." to "",
-            "Sajan vs DG NADRA etc." to "",
-            "Muhammad Usman vs DG NADRA etc." to "",
-            "Naseer Khan Vs Chairman NADRA etc." to "",
-            "Muhammad Anwar Khan vs FOP etc." to "",
-            "Nasira Kousar vs GOP etc." to "",
-            "Syed Asim Abbas Rizvi vs GOP etc." to "",
-            "Muhammad Rafique vs Chairman NADRA etc." to "",
-            "Aziz Khan Vs Chairman NADRA et." to "",
-            "Muhammad Shahid Hussain Vs FOP etc." to "",
-            "Abdul Qayyum Vs FOP etc." to "",
-            "Rooh Ullah Vs FOP etc." to "",
-            "Muhammad Ali Vs FOP etc." to "",
-            "Umm-e-Laila Vs NADRA etc." to "",
-            "Fakhar Abbas Vs FOP etc." to "",
-            "Arooj Vs DG NADRA etc." to "",
-            "Shahid Rasool Vs FOP etc." to "",
-            "Muhammad Adil Vs Regional Director Immigration Passport etc." to "",
-            "Ahsan Ullah Vs DG NADRA etc." to "",
-            "Mst. Nadia vs FOP etc." to "",
-            "Zafar Vs FOP etc." to "",
-            "Muhammad Noman Vs FOP etc." to "",
-            "Crl. Org. Gull Muhammad Vs Fiza Shahid." to "",
-            "Noor Baz Vs Chairman NADRA etc." to "",
-            "Mst. Madiha Hammad Vs GOP etc." to "",
-            "Noran Shah Vs Chairman NADRA etc." to "",
-            "Anam Naeem Vs DG NADRA etc." to "",
-            "Atta Ullah Vs FOP etc" to "",
-            "Ashfaq Ahmad Vs FOP etc." to "",
-            "Hanzala Nawaz Vs GOP etc" to "",
-            "Judicial Activism Panel Vs FOP etc." to "",
-            "Javaid Iqbal Vs FOP." to "",
-            "Naeem Shahzad Vs FOP etc." to "",
-            "Muhammad Usman Vs FOP etc." to "",
-            "Shahid Ashraf Vs FOP etc." to "",
-            "Imran Arif Vs Chairman NADRA etc." to "",
-            "Manzoor Masih Vs FOP etc." to "",
-            "Shahid Talib Vs Chairman NADRA etc" to "",
-            "Muhammad Younus Vs ADJ etc." to "",
-            "Ch Muhammad Arif Shafiq Vs FOP etc." to "",
-            "Inayat Ullah Qureshi Vs MoI etc." to "",
-            "Salman Babar Vs DG FIA etc." to "",
-            "Wajad Wali khan Vs FOP etc." to "",
-            "Mst. Yasmeen Saleem Vs GOP etc." to "",
-            "Zia Gilla Vs FOP etc." to "",
-            "Liaqat khan Vs FOP etc." to "",
-            "Mst. Shazia Bhatti Vs NADRA etc." to "",
-        )
+        val defaults = listOf<Pair<String, String>>()
         val existing = HashSet<String>()
         db.rawQuery("SELECT title FROM pending_files", null).use { cur ->
             while (cur.moveToNext()) existing.add(cur.getString(0).trim().lowercase())

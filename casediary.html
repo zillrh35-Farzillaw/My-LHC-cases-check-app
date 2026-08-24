@@ -338,83 +338,13 @@ function seedDefaultKeywords(){
   return changed;
 }
 
-/* The 73 files supplied as "pending / yet to be fixed" — seeded once, verbatim
-   from the lawyer's own document, so they're being checked from day one. */
-const DEFAULT_PENDING = [
-  {title:"Ali Ahmad vs FOP etc."},
-  {title:"Salikha Bibi vs GOP etc."},
-  {title:"Ghazanfar Ali Khan vs NADRA etc."},
-  {title:"Mubeen vs DG NADRA etc."},
-  {title:"Awais Ali vs NADRA etc."},
-  {title:"Syed Wasif Abbas Zaidi vs NADRA etc."},
-  {title:"Muhammad Qamar etc. vs Amir Nadeem Najami, AD Operations etc."},
-  {title:"Maqbool vs Chairman NADRA etc."},
-  {title:"Bibi Tareena vs FOP etc."},
-  {title:"Gulnaz Bibi Vs GOP."},
-  {title:"Mst. Maryam Bibi Vs NADRA etc."},
-  {title:"Shahid Mehmood Vs FOP."},
-  {title:"Ghulam Ghous Vs DG Immigration etc."},
-  {title:"Muhammad Aamir Vs FOP etc."},
-  {title:"Abdul Rehman Vs NADRA etc."},
-  {title:"Khalil Ahmad Vs NADRA etc."},
-  {title:"Abdul Mateen vs NADRA etc", note:"Never fixed or filed in High Court (precautionary), Important case, might fix in future."},
-  {title:"Mst. Salma Bibi vs NADRA etc."},
-  {title:"Noreen vs NADRA Lahore etc."},
-  {title:"Arshad Ali vs FOP etc."},
-  {title:"Asma Yousaf vs Public at Large etc."},
-  {title:"Irfan Islam vs GOP etc."},
-  {title:"Sajjad vs FOP etc."},
-  {title:"Multan Khan vs Chairman NADRA etc."},
-  {title:"Sultan Zari vs Chairman NADRA etc."},
-  {title:"Waqar Ahmad vs NADRA etc."},
-  {title:"Muhammad Ali vs GOP etc."},
-  {title:"Sajan vs DG NADRA etc."},
-  {title:"Muhammad Usman vs DG NADRA etc."},
-  {title:"Naseer Khan Vs Chairman NADRA etc."},
-  {title:"Muhammad Anwar Khan vs FOP etc."},
-  {title:"Nasira Kousar vs GOP etc."},
-  {title:"Syed Asim Abbas Rizvi vs GOP etc."},
-  {title:"Muhammad Rafique vs Chairman NADRA etc."},
-  {title:"Aziz Khan Vs Chairman NADRA et."},
-  {title:"Muhammad Shahid Hussain Vs FOP etc."},
-  {title:"Abdul Qayyum Vs FOP etc."},
-  {title:"Rooh Ullah Vs FOP etc."},
-  {title:"Muhammad Ali Vs FOP etc."},
-  {title:"Umm-e-Laila Vs NADRA etc."},
-  {title:"Fakhar Abbas Vs FOP etc."},
-  {title:"Arooj Vs DG NADRA etc."},
-  {title:"Shahid Rasool Vs FOP etc."},
-  {title:"Muhammad Adil Vs Regional Director Immigration Passport etc."},
-  {title:"Ahsan Ullah Vs DG NADRA etc."},
-  {title:"Mst. Nadia vs FOP etc."},
-  {title:"Zafar Vs FOP etc."},
-  {title:"Muhammad Noman Vs FOP etc."},
-  {title:"Crl. Org. Gull Muhammad Vs Fiza Shahid."},
-  {title:"Noor Baz Vs Chairman NADRA etc."},
-  {title:"Mst. Madiha Hammad Vs GOP etc."},
-  {title:"Noran Shah Vs Chairman NADRA etc."},
-  {title:"Anam Naeem Vs DG NADRA etc."},
-  {title:"Atta Ullah Vs FOP etc"},
-  {title:"Ashfaq Ahmad Vs FOP etc."},
-  {title:"Hanzala Nawaz Vs GOP etc"},
-  {title:"Judicial Activism Panel Vs FOP etc."},
-  {title:"Javaid Iqbal Vs FOP."},
-  {title:"Naeem Shahzad Vs FOP etc."},
-  {title:"Muhammad Usman Vs FOP etc."},
-  {title:"Shahid Ashraf Vs FOP etc."},
-  {title:"Imran Arif Vs Chairman NADRA etc."},
-  {title:"Manzoor Masih Vs FOP etc."},
-  {title:"Shahid Talib Vs Chairman NADRA etc"},
-  {title:"Muhammad Younus Vs ADJ etc."},
-  {title:"Ch Muhammad Arif Shafiq Vs FOP etc."},
-  {title:"Inayat Ullah Qureshi Vs MoI etc."},
-  {title:"Salman Babar Vs DG FIA etc."},
-  {title:"Wajad Wali khan Vs FOP etc."},
-  {title:"Mst. Yasmeen Saleem Vs GOP etc."},
-  {title:"Zia Gilla Vs FOP etc."},
-  {title:"Liaqat khan Vs FOP etc."},
-  {title:"Mst. Shazia Bhatti Vs NADRA etc."}
-];
+/* Pending files used to be seeded here from a client-name list supplied
+   early on. That data has been removed from source — this repo is public,
+   and real client/party names have no business sitting in public source
+   code. Nothing already saved on a phone is affected (it lives in that
+   phone's local storage, not here); a brand-new install just starts with
+   an empty Pending Files list, same as Cases and Keywords always have. */
+const DEFAULT_PENDING = [];
 function seedDefaultPending(){
   const have = new Set(S.pending.map(p=>normalize(p.title)));
   let changed = false;

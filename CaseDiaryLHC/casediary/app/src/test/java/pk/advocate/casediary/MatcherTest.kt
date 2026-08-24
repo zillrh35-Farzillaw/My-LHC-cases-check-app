@@ -132,18 +132,19 @@ class MatcherTest {
 
     // Three files that deliberately share common words ("Khan", "Chairman", "NADRA") —
     // this is what a real docket of dozens of NADRA files looks like, and it's what
-    // exposed the false-positive bug below.
+    // exposed the false-positive bug below. Names here are placeholders, not real
+    // client/party names — this is public source, not case data.
     private val pending = listOf(
-        PendingFile(id = 5, title = "Ghazanfar Ali Khan vs NADRA etc."),
-        PendingFile(id = 6, title = "Aziz Khan vs Chairman NADRA etc."),
-        PendingFile(id = 7, title = "Naseer Khan vs Chairman NADRA etc.")
+        PendingFile(id = 5, title = "Alpha Ali Khan vs NADRA etc."),
+        PendingFile(id = 6, title = "Bravo Khan vs Chairman NADRA etc."),
+        PendingFile(id = 7, title = "Charlie Khan vs Chairman NADRA etc.")
     )
 
     private fun pendingHits(row: String) = Matcher.findHits(row, Matcher.compile(terms, cases, pending))
 
     @Test
     fun `pending file title matches even with extra words the court added`() {
-        val row = "3 | GHAZANFAR ALI KHAN VS CHAIRMAN NADRA AND OTHERS | Writ Petition 55555/2026"
+        val row = "3 | ALPHA ALI KHAN VS CHAIRMAN NADRA AND OTHERS | Writ Petition 55555/2026"
         val hit = pendingHits(row).firstOrNull { it.kind == WatchTerm.KIND_PENDING }
         assertTrue(hit != null)
         assertEquals(5L, hit!!.pendingId)
@@ -152,16 +153,16 @@ class MatcherTest {
     @Test
     fun `pending file title tolerates a missing common word but not its own distinctive words`() {
         // "Khan" dropped — common across all three pending files, so it's tolerated.
-        val row = "3 | GHAZANFAR ALI VS NADRA | Writ Petition 55555/2026"
+        val row = "3 | ALPHA ALI VS NADRA | Writ Petition 55555/2026"
         assertTrue(pendingHits(row).any { it.pendingId == 5L })
     }
 
     @Test
     fun `a pending file sharing only common words with another does not false-positive`() {
-        // Regression test: this exact row used to also "match" the Aziz Khan and
-        // Naseer Khan pending files, purely because they share "Khan"/"Chairman"/
+        // Regression test: this exact row used to also "match" the Bravo Khan and
+        // Charlie Khan pending files, purely because they share "Khan"/"Chairman"/
         // "NADRA" — none of which are unique to any one of the three files.
-        val row = "3 | GHAZANFAR ALI KHAN VS CHAIRMAN NADRA AND OTHERS | Writ Petition 55555/2026"
+        val row = "3 | ALPHA ALI KHAN VS CHAIRMAN NADRA AND OTHERS | Writ Petition 55555/2026"
         val hits = pendingHits(row).filter { it.kind == WatchTerm.KIND_PENDING }
         assertEquals(1, hits.size)
         assertEquals(5L, hits.first().pendingId)

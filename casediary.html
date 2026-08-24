@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F5132">
-<title>Zill's Case Diary</title>
+<title>Zill Law Case Registry</title>
 <style>
   :root{
     --brand:#0F5132; --brand-dark:#0A3B24; --brand-light:#D7EADF;
@@ -90,6 +90,14 @@
   .tbl td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
   .tblwrap{overflow-x:auto}
   #printReport{display:none}
+  .switch{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .switch .slider{position:absolute;inset:0;background:#d3d6d4;border-radius:999px;
+    transition:background .15s;cursor:pointer}
+  .switch .slider::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;
+    background:#fff;border-radius:50%;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .switch input:checked + .slider{background:var(--brand)}
+  .switch input:checked + .slider::before{transform:translateX(16px)}
   @media print{
     header, .tabs, .modal, main > section{display:none !important}
     #printReport{display:block !important;padding:16px;color:#000}
@@ -106,7 +114,7 @@
 <body>
 
 <header>
-  <h1 id="hTitle">Zill's Case Diary</h1>
+  <h1 id="hTitle">Zill Law Case Registry</h1>
   <div class="sub" id="hSub">Lahore High Court</div>
 </header>
 
@@ -144,6 +152,10 @@
       </button>
       <textarea id="paste" style="margin-top:8px"
         placeholder="Paste the cause list text here…"></textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <input type="checkbox" id="principalSeatOnly" style="width:auto" onchange="togglePrincipalSeatOnly()">
+        Only check Principal Seat (Lahore) — skip Bahawalpur / Multan / Rawalpindi bench listings
+      </label>
       <div class="row" style="margin-top:8px">
         <button class="btn" onclick="scanPaste()">Scan for my keywords</button>
         <button class="btn3" onclick="document.getElementById('paste').value=''">Clear</button>
@@ -264,7 +276,8 @@
 
 /* ------------------------------------------------------------------ store */
 const KEY = "casediary.v1";
-const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [], seq: 1 };
+const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [],
+  settings: { principalSeatOnly: true }, seq: 1 };
 
 function load(){
   try{
@@ -393,7 +406,7 @@ function seedDefaultPending(){
   let changed = false;
   for(const d of DEFAULT_PENDING){
     if(!have.has(normalize(d.title))){
-      S.pending.push({id:nextId(), title:d.title, note:d.note||"", addedAt:Date.now()});
+      S.pending.push({id:nextId(), title:d.title, note:d.note||"", addedAt:Date.now(), enabled:true});
       have.add(normalize(d.title));
       changed = true;
     }
@@ -401,9 +414,40 @@ function seedDefaultPending(){
   return changed;
 }
 
+/* Consolidates hits recorded by an older version of the app, where the same
+   cause-list row was stored once per matching keyword instead of once per
+   row. Groups by (source + row text) and merges every matched term into one
+   entry, so a case hit by several keywords is never listed more than once. */
+function migrateHits(){
+  if(!S.hits.some(h=>!h.terms)) return false;
+  const bySig = new Map();
+  for(const h of S.hits){
+    const terms = h.terms || [{term:h.term, kind:h.kind}];
+    const sig = (h.source||"") + "|" + normalize(h.raw||"");
+    const ex = bySig.get(sig);
+    if(ex){
+      for(const t of terms){
+        if(!ex.terms.some(et=>normalize(et.term)===normalize(t.term))) ex.terms.push(t);
+      }
+      if(h.caseId) ex.caseId = h.caseId;
+      if(h.pendingId && !ex.caseId) ex.pendingId = h.pendingId;
+      ex.foundAt = Math.max(ex.foundAt, h.foundAt||0);
+    } else {
+      bySig.set(sig, {
+        hash: hashOf(["paste", h.raw||""]), terms: terms.slice(),
+        caseId: h.caseId||0, pendingId: h.pendingId||0,
+        source: h.source, raw: h.raw, foundAt: h.foundAt||0
+      });
+    }
+  }
+  S.hits = [...bySig.values()].sort((a,b)=>b.foundAt-a.foundAt);
+  return true;
+}
+
 let S = load();
 if(seedDefaultKeywords()) save();
 if(seedDefaultPending()) save();
+if(migrateHits()) save();
 
 /* ---------------------------------------------------------------- matcher */
 /* Mirrors the Kotlin matcher in the Android build, same rules and outcomes. */
@@ -463,6 +507,7 @@ function compile(keys, cases, pending){
   }
   for(const c of cases){
     if(c.status === "ARCHIVED") continue;
+    if(c.watched === false) continue;
     const ref = caseRef(c);
     if(c.caseNo && c.caseYear){
       const t = usableTokens(c.caseNo + " " + c.caseYear);
@@ -482,7 +527,7 @@ function compile(keys, cases, pending){
      purely on words it shares with every other file. Each title's OWN rare
      words (appearing in at most 2 pending titles) must always be present;
      only the common words it shares with many other titles may be missed. */
-  const pendingList = pending || [];
+  const pendingList = (pending || []).filter(pf => pf.enabled !== false);
   const freq = new Map();
   for(const pf of pendingList){
     for(const tok of new Set(pendingTokens(pf.title))) freq.set(tok, (freq.get(tok)||0) + 1);
@@ -523,6 +568,12 @@ function findHits(row, probes){
   }
   return [...out.values()];
 }
+/* Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
+   the same cause list as Principal Seat (Lahore) cases. Toggle in the Diary
+   tab — on by default, since most practices here only run at Lahore. */
+function isOtherBench(row){
+  return /\b(bahawalpur|multan|rawalpindi)\b/i.test(row);
+}
 function hashOf(parts){
   const joined = parts.map(normalize).join("|");
   let h = 5381;
@@ -559,7 +610,7 @@ function fromInput(v){ if(!v) return 0; const [y,m,d]=v.split("-").map(Number);
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
 const TABS = ["cases","diary","pending","keys","backup"];
-const TAB_TITLES = {cases:"Zill's Case Diary", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
+const TAB_TITLES = {cases:"Zill Law Case Registry", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
 function switchTab(name){
   tab = name;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));
@@ -626,6 +677,7 @@ function renderCases(){
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${c.nextDate ? `<span class="pill">${esc(relLabel(c.nextDate))} · ${esc(fmt(c.nextDate))}</span>` : ""}
         ${fixedByCaseId.has(c.id) ? `<span class="pill" style="background:var(--brand);color:#fff">✓ Fixed in cause list</span>` : ""}
+        ${c.watched === false ? `<span class="pill warn">Not auto-checked</span>` : ""}
       </div>
     </div>`;
   }).join("");
@@ -635,7 +687,13 @@ function renderCases(){
 let selectedHits = new Set();
 let selectedFixed = new Set();
 
+function togglePrincipalSeatOnly(){
+  S.settings.principalSeatOnly = document.getElementById("principalSeatOnly").checked;
+  save();
+}
+
 function renderDiary(){
+  document.getElementById("principalSeatOnly").checked = S.settings.principalSeatOnly !== false;
   const approval = S.hits.filter(h=>h.pendingId);
   const mine     = S.hits.filter(h=>h.caseId && !h.pendingId);
   const others   = S.hits.filter(h=>!h.caseId && !h.pendingId);
@@ -651,6 +709,10 @@ function renderDiary(){
   const kindLabel = k => ({ADVOCATE:"counsel name",PARTY:"party name",
                            CASE:"case number",OTHER:"keyword"}[k] || "");
   const isPrimary = term => { const k = S.keys.find(x=>x.term===term); return k && k.priority==="PRIMARY"; };
+  const hitIsPrimary = h => (h.terms||[]).some(t=>isPrimary(t.term));
+  const hitTitle = h => (h.terms||[]).map(t=>t.term).join("  ·  ");
+  const hitKinds = h => { const seen=new Set(); return (h.terms||[]).map(t=>kindLabel(t.kind))
+      .filter(k=>k && !seen.has(k) && seen.add(k)).join(", "); };
   const checkbox = h => `<input type="checkbox" class="hitcheck" style="width:auto;flex:none"
       ${selectedHits.has(h.hash)?"checked":""} onclick="toggleHitSelect('${esc(h.hash)}')">`;
 
@@ -658,13 +720,14 @@ function renderDiary(){
       <div style="display:flex;gap:8px;align-items:center">
         ${checkbox(h)}
         <span class="pill" style="margin-top:0" onclick="viewHit('${esc(h.hash)}')">${esc(h.source||"Cause list")}</span>
-        ${isPrimary(h.term) ? `<span class="pill warn" style="margin-top:0">Primary</span>` : ""}
+        ${hitIsPrimary(h) ? `<span class="pill warn" style="margin-top:0">Primary</span>` : ""}
+        ${(h.terms||[]).length > 1 ? `<span class="pill" style="margin-top:0">${h.terms.length} keywords matched</span>` : ""}
         ${h.caseId ? `<span class="pill" style="margin-top:0;background:var(--brand);color:#fff">Saved case</span>` : ""}
         <span style="flex:1"></span>
         <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
       </div>
-      <div class="ttl click" style="font-weight:700;margin-top:8px" onclick="viewHit('${esc(h.hash)}')">${esc(h.term)}</div>
-      <div class="meta">${esc(kindLabel(h.kind))}</div>
+      <div class="ttl click" style="font-weight:700;margin-top:8px" onclick="viewHit('${esc(h.hash)}')">${esc(hitTitle(h))}</div>
+      <div class="meta">${esc(hitKinds(h))}</div>
       <div class="hit">${esc(h.raw)}</div>
       <div class="row" style="margin-top:8px">
         <button class="btn2" onclick="openSaveDialog('${esc(h.hash)}')">Save to My Cases</button>
@@ -674,11 +737,18 @@ function renderDiary(){
 
   let html = "";
 
+  const selectableCount = mine.length + others.length + approval.length;
+  if(selectableCount){
+    html += `<div class="row" style="margin-bottom:4px">
+      <button class="btn3" style="white-space:nowrap" onclick="selectAllHits()">Select all (${selectableCount})</button>
+      ${selectedHits.size ? `<button class="btn3" style="white-space:nowrap" onclick="clearHitSelection()">Deselect all</button>` : ""}
+    </div>`;
+  }
   if(selectedHits.size){
     html += `<div class="okbox" style="display:flex;align-items:center;gap:10px">
       <span style="flex:1">${selectedHits.size} selected</span>
       <button class="btn" style="white-space:nowrap" onclick="saveSelectedHits()">Save to My Cases</button>
-      <button class="btn3" style="white-space:nowrap" onclick="clearHitSelection()">Clear</button>
+      <button class="btnDanger" style="white-space:nowrap" onclick="clearSelectedHits()">Remove</button>
     </div>`;
   }
 
@@ -693,7 +763,7 @@ function renderDiary(){
           <span style="flex:1"></span>
           <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
         </div>
-        <div class="ttl" style="font-weight:700;margin-top:8px">${esc(p ? p.title : h.term)}</div>
+        <div class="ttl" style="font-weight:700;margin-top:8px">${esc(p ? p.title : hitTitle(h))}</div>
         <div class="hit">${esc(h.raw)}</div>
         <div class="row" style="margin-top:10px">
           <button class="btn" onclick="openSaveDialog('${esc(h.hash)}')">✓ Approve — save to My Cases</button>
@@ -728,7 +798,7 @@ function renderDiary(){
             mine.map(hitCard).join("");
   }
   if(others.length){
-    others.sort((a,b) => (isPrimary(b.term)?1:0) - (isPrimary(a.term)?1:0));
+    others.sort((a,b) => (hitIsPrimary(b)?1:0) - (hitIsPrimary(a)?1:0));
     html += `<h2>Other keyword matches<span class="n">${others.length}</span></h2>` +
             others.map(hitCard).join("");
   }
@@ -764,10 +834,17 @@ function renderPending(){
   el.innerHTML = `<h2>Pending files<span class="n">${list.length}</span></h2>` +
     list.map(p=>{
       const matches = S.hits.filter(h=>h.pendingId===p.id);
+      const on = p.enabled !== false;
       return `<div class="card">
-        <div class="ttl" style="font-weight:700">${esc(p.title)}</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="ttl" style="font-weight:700;flex:1">${esc(p.title)}</div>
+          <label class="switch" title="${on?'Being checked in every scan':'Not being checked'}">
+            <input type="checkbox" ${on?"checked":""} onclick="togglePendingEnabled(${p.id})">
+            <span class="slider"></span>
+          </label>
+        </div>
         ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ""}
-        <div class="meta">Added ${esc(fmt(p.addedAt))}</div>
+        <div class="meta">Added ${esc(fmt(p.addedAt))}${on?"":" · paused — skipped when scanning"}</div>
         ${matches.length ? `<span class="pill warn">${matches.length} possible match${matches.length===1?"":"es"} — review in Diary</span>` : ""}
         <div class="row" style="margin-top:10px">
           ${matches.length ? `<button class="btn3" onclick="switchTab('diary')">Review in Diary</button>` : ""}
@@ -776,12 +853,16 @@ function renderPending(){
       </div>`;
     }).join("");
 }
+function togglePendingEnabled(id){
+  const p = S.pending.find(x=>x.id===id);
+  if(p){ p.enabled = p.enabled === false; save(); render(); }
+}
 function addPending(){
   const t = document.getElementById("newPending");
   const n = document.getElementById("newPendingNote");
   const title = t.value.trim();
   if(title.length < 5){ alert("Enter the case title — at least a few words."); return; }
-  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now()});
+  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now(), enabled:true});
   t.value = ""; n.value = "";
   save(); render();
 }
@@ -802,7 +883,7 @@ function openSaveDialog(hash){
   if(!h) return;
   const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
   const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
-  const defaultTitle = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : h.term);
+  const defaultTitle = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
   openModal(`<h3>Save to My Cases</h3>
     <div class="hit">${esc(h.raw)}</div>
     <label>Title &amp; No. of the case</label>
@@ -845,7 +926,7 @@ function saveSelectedHits(){
     if(!h) continue;
     const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
     const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
-    const titleNo = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : h.term);
+    const titleNo = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
     S.fixed.unshift({
       id: nextId(), titleNo, court:"", prayer:"", proceedings:"", causelistNo:"",
       fixedDate: Date.now(), sourceRaw: h.raw, caseId: h.caseId || 0
@@ -861,6 +942,19 @@ function toggleHitSelect(hash){
   render();
 }
 function clearHitSelection(){ selectedHits.clear(); render(); }
+function selectAllHits(){
+  const approval = S.hits.filter(h=>h.pendingId);
+  const rest = S.hits.filter(h=>!h.pendingId);
+  for(const h of [...approval, ...rest]) selectedHits.add(h.hash);
+  render();
+}
+function clearSelectedHits(){
+  if(!selectedHits.size) return;
+  if(!confirm(`Remove ${selectedHits.size} selected match${selectedHits.size===1?"":"es"} from the Diary? Your cases are not touched.`)) return;
+  S.hits = S.hits.filter(x=>!selectedHits.has(x.hash));
+  selectedHits.clear();
+  save(); render();
+}
 
 function toggleFixedSelect(id){
   if(selectedFixed.has(id)) selectedFixed.delete(id); else selectedFixed.add(id);
@@ -1004,27 +1098,62 @@ function scanPaste(){
 
   const probes = compile(S.keys, S.cases, S.pending);
   const activeKeyCount = S.keys.filter(k=>k.enabled!==false).length;
-  const rows = text.split("\n").map(r=>r.trim()).filter(r=>r.length >= 8);
-  const seen = new Set(S.hits.map(h=>h.hash));
+  const activePendingCount = S.pending.filter(p=>p.enabled!==false).length;
+  const principalSeatOnly = S.settings.principalSeatOnly !== false;
+
+  let rows = text.split("\n").map(r=>r.trim()).filter(r=>r.length >= 8);
+  let skippedBench = 0;
+  if(principalSeatOnly){
+    const kept = rows.filter(r => !isOtherBench(r));
+    skippedBench = rows.length - kept.length;
+    rows = kept;
+  }
+
   const now = Date.now();
-  let fresh = 0, total = 0;
+  let freshRows = 0, matchedRows = 0;
 
   for(const row of rows){
-    let hs = findHits(row, probes);
+    const hs = findHits(row, probes);
     if(!hs.length) continue;
-    // If a row is one of your own cases, it belongs in "My cases" only — a
-    // keyword or pending-file match on the same line must not duplicate it below.
-    const mineOnly = hs.filter(h => h.caseId);
-    if(mineOnly.length) hs = mineOnly;
+    matchedRows++;
+
+    // A row that is one of your own saved cases is categorised as "mine";
+    // otherwise a pending-file match needs approval; otherwise it's a plain
+    // keyword hit. Whichever category it lands in, EVERY term that matched —
+    // case number, party name, keyword, pending file — is merged into that
+    // one row's entry. A case must never be listed twice just because
+    // several keywords also matched the same line.
+    const mine = hs.find(h => h.caseId);
+    const pendingHit = !mine && hs.find(h => h.pendingId);
+    const caseId = mine ? mine.caseId : 0;
+    const pendingId = pendingHit ? pendingHit.pendingId : 0;
+
     const clipped = row.length > 400 ? row.slice(0,400) + "…" : row;
+    const hash = hashOf(["paste", clipped]);
+    const seenTerm = new Set();
+    const terms = [];
     for(const h of hs){
-      total++;
-      const hash = hashOf(["paste", clipped, h.term, String(h.pendingId||0)]);
-      if(seen.has(hash)) continue;
-      seen.add(hash);
-      fresh++;
-      S.hits.unshift({hash, term:h.term, kind:h.kind, caseId:h.caseId, pendingId:h.pendingId||0,
-        source:"Pasted list", raw:clipped, foundAt:now});
+      const key = normalize(h.term);
+      if(seenTerm.has(key)) continue;
+      seenTerm.add(key);
+      terms.push({term:h.term, kind:h.kind});
+    }
+
+    const existing = S.hits.find(x=>x.hash===hash);
+    if(existing){
+      let added = false;
+      for(const t of terms){
+        if(!existing.terms.some(et=>normalize(et.term)===normalize(t.term))){
+          existing.terms.push(t);
+          added = true;
+        }
+      }
+      if(caseId) existing.caseId = caseId;
+      if(pendingId && !existing.caseId) existing.pendingId = pendingId;
+      if(added){ existing.foundAt = now; freshRows++; }
+    } else {
+      S.hits.unshift({hash, terms, caseId, pendingId, source:"Pasted list", raw:clipped, foundAt:now});
+      freshRows++;
     }
   }
   if(S.hits.length > 400) S.hits.length = 400;
@@ -1036,13 +1165,14 @@ function scanPaste(){
   save();
 
   const checkedNote = `Checked ${activeKeyCount} keyword${activeKeyCount===1?"":"s"}
-    (incl. NADRA / citizenship defaults) and ${S.pending.length} pending file${S.pending.length===1?"":"s"}.`;
-  out.innerHTML = fresh
-    ? `<div class="okbox" style="margin-top:10px"><b>${fresh} new match${fresh===1?"":"es"}</b>
-         from ${rows.length} lines. ${checkedNote} See the Diary below —
+    (incl. NADRA / citizenship defaults) and ${activePendingCount} pending file${activePendingCount===1?"":"s"}.` +
+    (skippedBench ? ` Skipped ${skippedBench} other-bench line${skippedBench===1?"":"s"} (Bahawalpur/Multan/Rawalpindi).` : "");
+  out.innerHTML = freshRows
+    ? `<div class="okbox" style="margin-top:10px"><b>${freshRows} new/updated case${freshRows===1?"":"s"}</b>
+         from ${matchedRows} matched line${matchedRows===1?"":"s"} of ${rows.length} checked. ${checkedNote} See the Diary below —
          pending-file matches need your approval before they count as fixed.</div>`
     : `<div class="warnbox" style="margin-top:10px">
-         ${total ? `Nothing new — ${total} match${total===1?"":"es"} were already recorded.`
+         ${matchedRows ? `Nothing new — ${matchedRows} matched line${matchedRows===1?"":"s"} were already recorded.`
                  : `No matches in ${rows.length} lines. ${checkedNote}`}</div>`;
   render();
 }
@@ -1087,9 +1217,22 @@ function viewHit(hash){
   const h = S.hits.find(x=>x.hash===hash);
   if(!h) return;
   const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
-  openModal(`<h3>${esc(h.term)}</h3>
+  const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
+  const kindLabel = k => ({ADVOCATE:"counsel name",PARTY:"party name",
+                           CASE:"case number",OTHER:"keyword"}[k] || "");
+  const terms = h.terms || [];
+  const title = p ? p.title : (c ? (caseRef(c)||caseTitle(c)) : terms.map(t=>t.term).join("  ·  "));
+  const lines = [
+    c && c.court && "Bench: " + c.court,
+    c && c.judge && "Judge / court: " + c.judge,
+    c && c.stage && "Stage: " + c.stage,
+    "Source: " + h.source,
+    "Found: " + stamp(h.foundAt)
+  ].filter(Boolean).map(esc).join("<br>");
+  openModal(`<h3>${esc(title)}</h3>
+    ${terms.length ? `<div class="meta">Matched: ${terms.map(t=>esc(t.term)+(kindLabel(t.kind)?` (${esc(kindLabel(t.kind))})`:"")).join(", ")}</div>` : ""}
     <div class="hit">${esc(h.raw)}</div>
-    <div class="note">Source: ${esc(h.source)}<br>Found: ${esc(stamp(h.foundAt))}</div>
+    <div class="note" style="line-height:1.7">${lines}</div>
     ${c ? `<button class="btn2" style="width:100%;margin-top:12px"
             onclick="closeModal();viewCase(${c.id})">Open ${esc(caseRef(c)||caseTitle(c))}</button>` : ""}
     <button class="btn3" style="width:100%;margin-top:8px" onclick="closeModal()">Close</button>`);
@@ -1170,10 +1313,18 @@ function editCase(id){
   const c = id ? S.cases.find(x=>x.id===id) : {
     caseType:"",caseNo:"",caseYear:"",petitioner:"",respondent:"",clientName:"",
     clientPhone:"",court:"",judge:"",stage:"",nextDate:0,status:"ACTIVE",
-    feeTotal:0,feeReceived:0,notes:"",hearings:[]
+    feeTotal:0,feeReceived:0,notes:"",hearings:[],watched:true
   };
   const f = (k,v) => esc(c[k] || v || "");
+  const watched = c.watched !== false;
   openModal(`<h3>${id ? "Edit case" : "Add case"}</h3>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+      <label class="switch" style="margin:0">
+        <input type="checkbox" id="f_watched" ${watched?"checked":""}>
+        <span class="slider"></span>
+      </label>
+      <span style="font-size:13px">Check this case's number automatically when scanning cause lists</span>
+    </div>
     <div class="row">
       <div><label>Type</label><input id="f_caseType" value="${f("caseType")}" placeholder="W.P."></div>
       <div><label>Number</label><input id="f_caseNo" value="${f("caseNo")}" placeholder="12345"></div>
@@ -1219,6 +1370,7 @@ function saveCase(id){
   c.status      = g("status") || "ACTIVE";
   c.feeTotal    = parseFloat(g("feeTotal")) || 0;
   c.feeReceived = parseFloat(g("feeReceived")) || 0;
+  c.watched     = document.getElementById("f_watched")?.checked !== false;
   c.updatedAt   = Date.now();
 
   if(!c.caseNo && !c.petitioner && !c.respondent){
@@ -1288,9 +1440,9 @@ function importData(ev){
 /* expose for inline handlers */
 Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,saveHearing,
   addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc,
-  switchTab,addPending,removePending,openSaveDialog,saveHitToCases,saveSelectedHits,
-  toggleHitSelect,clearHitSelection,toggleFixedSelect,editFixed,updateFixed,dismissPendingHit,
-  removeHit,removeFixed,exportReportPdf,togglePriority,searchScans});
+  switchTab,addPending,removePending,togglePendingEnabled,openSaveDialog,saveHitToCases,saveSelectedHits,
+  toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,toggleFixedSelect,editFixed,updateFixed,dismissPendingHit,
+  removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly});
 
 render();
 </script>

@@ -61,6 +61,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(K_PENDING_ENABLED, true)
         set(v) = sp.edit().putBoolean(K_PENDING_ENABLED, v).apply()
 
+    /** Throttles the silent update check on app start to at most once an hour. */
+    var lastUpdateCheckAt: Long
+        get() = sp.getLong(K_LAST_UPDATE_CHECK, 0L)
+        set(v) = sp.edit().putLong(K_LAST_UPDATE_CHECK, v).apply()
+
     companion object {
         private const val K_AUTO = "auto_check"
         private const val K_EVE_H = "eve_h"
@@ -73,5 +78,6 @@ class Prefs(context: Context) {
         private const val K_AUTOSCAN = "auto_scan_browser"
         private const val K_PRINCIPAL_SEAT = "principal_seat_only"
         private const val K_PENDING_ENABLED = "pending_files_enabled"
+        private const val K_LAST_UPDATE_CHECK = "last_update_check_at"
     }
 }

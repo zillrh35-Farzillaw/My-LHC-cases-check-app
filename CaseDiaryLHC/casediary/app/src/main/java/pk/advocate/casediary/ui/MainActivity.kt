@@ -7,9 +7,13 @@ import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import pk.advocate.casediary.R
 import pk.advocate.casediary.databinding.ActivityMainBinding
 import pk.advocate.casediary.util.Notifications
+import pk.advocate.casediary.util.Prefs
+import pk.advocate.casediary.util.UpdateChecker
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,6 +42,20 @@ class MainActivity : AppCompatActivity() {
         selectTab(requested)
 
         askForNotificationPermission()
+        checkForUpdateSilently()
+    }
+
+    /** At most once an hour, so opening/backgrounding the app repeatedly doesn't hammer the API. */
+    private fun checkForUpdateSilently() {
+        val prefs = Prefs(this)
+        if (System.currentTimeMillis() - prefs.lastUpdateCheckAt < 60 * 60 * 1000L) return
+        lifecycleScope.launch {
+            val info = UpdateChecker.fetchLatest()
+            prefs.lastUpdateCheckAt = System.currentTimeMillis()
+            if (info != null && UpdateChecker.isNewer(info)) {
+                UpdateChecker.promptInstall(this@MainActivity, lifecycleScope, b.root, info)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

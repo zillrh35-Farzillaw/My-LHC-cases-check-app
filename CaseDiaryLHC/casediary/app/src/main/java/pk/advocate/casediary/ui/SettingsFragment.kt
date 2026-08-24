@@ -13,9 +13,12 @@ import android.widget.Spinner
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
+import pk.advocate.casediary.BuildConfig
 import pk.advocate.casediary.R
 import pk.advocate.casediary.databinding.FragmentSettingsBinding
 import pk.advocate.casediary.databinding.ItemSourceBinding
@@ -24,6 +27,7 @@ import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Backup
 import pk.advocate.casediary.util.Dates
 import pk.advocate.casediary.util.Prefs
+import pk.advocate.casediary.util.UpdateChecker
 import pk.advocate.casediary.work.Scheduler
 
 class SettingsFragment : Fragment() {
@@ -115,6 +119,9 @@ class SettingsFragment : Fragment() {
         b.btnImport.setOnClickListener {
             importPicker.launch(arrayOf("application/json", "text/plain", "*/*"))
         }
+
+        b.versionText.text = "Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
+        b.btnCheckUpdate.setOnClickListener { checkForUpdate() }
 
         renderTerms()
         renderSources()
@@ -280,6 +287,22 @@ class SettingsFragment : Fragment() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun checkForUpdate() {
+        b.updateStatus.text = "Checking…"
+        viewLifecycleOwner.lifecycleScope.launch {
+            val info = UpdateChecker.fetchLatest()
+            if (_b == null) return@launch
+            when {
+                info == null -> b.updateStatus.text = "Could not check for updates — try again later."
+                UpdateChecker.isNewer(info) -> {
+                    b.updateStatus.text = "Update available: ${info.versionName}"
+                    UpdateChecker.promptInstall(requireContext(), viewLifecycleOwner.lifecycleScope, b.root, info)
+                }
+                else -> b.updateStatus.text = "You're on the latest version."
+            }
+        }
     }
 
     private fun exportBackup() {

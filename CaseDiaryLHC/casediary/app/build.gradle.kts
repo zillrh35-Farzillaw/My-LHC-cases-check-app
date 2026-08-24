@@ -7,12 +7,20 @@ android {
     namespace = "pk.advocate.casediary"
     compileSdk = 34
 
+    // CI passes the workflow run number so every build is a strictly higher
+    // versionCode than the last, and the in-app update checker (see
+    // util/UpdateChecker.kt) can tell a newer release apart from the one
+    // that's installed. Local/manual builds fall back to a fixed dev version.
+    val ciVersionCode = System.getenv("APP_VERSION_CODE")?.toIntOrNull() ?: 1
+    val ciVersionName = System.getenv("APP_VERSION_NAME") ?: "1.0-dev"
+
     defaultConfig {
         applicationId = "pk.advocate.casediary"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciVersionCode
+        versionName = ciVersionName
+        buildConfigField("String", "GITHUB_REPO", "\"zillrh35-Farzillaw/My-LHC-cases-check-app\"")
     }
 
     buildTypes {
@@ -36,6 +44,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     packaging {

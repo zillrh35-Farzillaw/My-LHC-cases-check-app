@@ -207,4 +207,43 @@ class MatcherTest {
         assertTrue(Matcher.isOtherBench("3 | C.R. 7/2026 | Rawalpindi Bench listing"))
         assertFalse(Matcher.isOtherBench("4 | W.P. 8/2026 | Lahore principal seat matter"))
     }
+
+    // ------------------------------------------------------- C.M./application consolidation
+
+    @Test
+    fun `a C M row is recognised and its parent case is extracted`() {
+        val row = "C.M.No.11/2026 in W.P.No.4001/2026 Ali Raza vs State"
+        assertTrue(Matcher.isCmRow(row))
+        assertEquals("WP:4001:2026", Matcher.cmParentRef(row))
+    }
+
+    @Test
+    fun `a bare main case row is not treated as a C M row`() {
+        val row = "W.P. No.4001/2026 Ali Raza vs State, hearing today"
+        assertFalse(Matcher.isCmRow(row))
+        assertEquals("WP:4001:2026", Matcher.ownCaseRef(row))
+    }
+
+    @Test
+    fun `Crl Misc is a main case type, not a C M application`() {
+        // "Crl.Misc." (Criminal Miscellaneous, a petition type) must not be
+        // confused with "Crl.M.A." (Criminal Miscellaneous Application, a
+        // sub-application) — only the latter should read as a C.M. row.
+        assertFalse(Matcher.isCmRow("Crl.Misc.No.987/2024 Sana Textiles vs FBR"))
+        assertTrue(Matcher.isCmRow("Crl.M.A.No.5/2026 in Crl.Misc.No.987/2024 Sana Textiles vs FBR"))
+    }
+
+    @Test
+    fun `a C M row without a parseable parent is left ungrouped`() {
+        val row = "C.M.No.9/2026 Some Company vs Another"
+        assertTrue(Matcher.isCmRow(row))
+        assertEquals(null, Matcher.cmParentRef(row))
+    }
+
+    @Test
+    fun `canonical refs ignore type punctuation and two-digit years`() {
+        val a = Matcher.ownCaseRef("W.P.No.001/26 Someone vs State")
+        val b = Matcher.ownCaseRef("W P 1/2026 Someone vs State")
+        assertEquals(a, b)
+    }
 }

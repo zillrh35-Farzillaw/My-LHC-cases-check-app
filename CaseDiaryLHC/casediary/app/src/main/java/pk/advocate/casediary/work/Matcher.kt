@@ -212,6 +212,34 @@ object Matcher {
      */
     fun isOtherBench(row: String): Boolean = OTHER_BENCH.containsMatchIn(row)
 
+    /**
+     * A C.M./C.M.A./Crl.M.A. row is a miscellaneous application filed IN a
+     * main case — the cause list often prints it as its own line, right
+     * alongside (or instead of) the main case's own line. It is the same
+     * matter, so callers (see [pk.advocate.casediary.work.CauseListScraper])
+     * fold it back into the main case instead of listing it separately.
+     */
+    private const val CASE_TYPE_ALT =
+        "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
+            "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?"
+    private val CM_LEAD_RE = Regex(
+        "^\\s*(?:\\d+\\s*[|.]?\\s*)?(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)\\s*(?:No\\.?)?\\s*\\d+\\s*/\\s*\\d{2,4}\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val OWN_REF_RE = Regex("\\b($CASE_TYPE_ALT)\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", RegexOption.IGNORE_CASE)
+    private val CM_PARENT_RE = Regex("\\bin\\s+($CASE_TYPE_ALT)\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", RegexOption.IGNORE_CASE)
+
+    private fun canonicalCaseRef(m: MatchResult): String {
+        val type = m.groupValues[1].filter { it.isLetter() }.uppercase(Locale.ENGLISH)
+        val no = m.groupValues[2].trimStart('0').ifEmpty { "0" }
+        val yr = m.groupValues[3].let { if (it.length == 2) "20$it" else it }
+        return "$type:$no:$yr"
+    }
+
+    fun isCmRow(row: String): Boolean = CM_LEAD_RE.containsMatchIn(row)
+    fun ownCaseRef(row: String): String? = OWN_REF_RE.find(row)?.let { canonicalCaseRef(it) }
+    fun cmParentRef(row: String): String? = CM_PARENT_RE.find(row)?.let { canonicalCaseRef(it) }
+
     /** Stable identity for a cause-list row so it is only notified once. */
     fun hashOf(vararg parts: String): String {
         val joined = parts.joinToString("|") { normalize(it) }

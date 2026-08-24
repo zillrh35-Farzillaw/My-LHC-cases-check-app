@@ -588,6 +588,31 @@ function findHits(row, probes){
 function isOtherBench(row){
   return /\b(bahawalpur|multan|rawalpindi)\b/i.test(row);
 }
+
+/* A C.M./C.M.A./Crl.M.A. row is a miscellaneous application filed IN a main
+   case — the cause list often prints it as its own line, right alongside
+   (or instead of) the main case's own line. It is the same matter, so it
+   must never be listed as a separate result: if the main case itself also
+   turns up in this same scan, the C.M. line is dropped; if the main case
+   never turns up on its own, at most one C.M. line for it is kept, standing
+   in for the whole group. */
+const CASE_TYPE_ALT =
+  "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
+  "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?";
+const CM_LEAD_RE = /^\s*(?:\d+\s*[|.]?\s*)?(?:C\.?\s*M\.?\s*A?\.?|Crl\.?\s*M\.?\s*A\.?)\s*(?:No\.?)?\s*\d+\s*\/\s*\d{2,4}\b/i;
+const OWN_REF_RE = new RegExp("\\b(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
+const CM_PARENT_RE = new RegExp("\\bin\\s+(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
+
+function canonicalCaseRef(m){
+  const type = m[1].replace(/[^a-z]/gi, "").toUpperCase();
+  const no = m[2].replace(/^0+(?=\d)/, "");
+  const yr = m[3].length === 2 ? "20" + m[3] : m[3];
+  return type + ":" + no + ":" + yr;
+}
+function isCmRow(row){ return CM_LEAD_RE.test(row); }
+function ownCaseRef(row){ const m = row.match(OWN_REF_RE); return m ? canonicalCaseRef(m) : null; }
+function cmParentRef(row){ const m = row.match(CM_PARENT_RE); return m ? canonicalCaseRef(m) : null; }
+
 function hashOf(parts){
   const joined = parts.map(normalize).join("|");
   let h = 5381;
@@ -1121,11 +1146,32 @@ function scanPaste(){
   }
 
   const now = Date.now();
-  let freshRows = 0, matchedRows = 0;
+  let freshRows = 0, matchedRows = 0, skippedCm = 0;
 
+  // First pass: find every matched row and work out which ones are bare main
+  // cases (so their C.M. applications can be dropped) versus C.M. rows that
+  // reference a main case by name.
+  const matched = [];
+  const mainCaseSeen = new Set();
   for(const row of rows){
     const hs = findHits(row, probes);
     if(!hs.length) continue;
+    const cm = isCmRow(row);
+    const parent = cm ? cmParentRef(row) : null;
+    if(!cm){
+      const own = ownCaseRef(row);
+      if(own) mainCaseSeen.add(own);
+    }
+    matched.push({row, hs, cm, parent});
+  }
+
+  const seenCmGroups = new Set();
+  for(const {row, hs, cm, parent} of matched){
+    if(cm && parent){
+      if(mainCaseSeen.has(parent)){ skippedCm++; continue; }       // main case also matched — drop the C.M.
+      if(seenCmGroups.has(parent)){ skippedCm++; continue; }       // already represented by another C.M. of the same case
+      seenCmGroups.add(parent);
+    }
     matchedRows++;
 
     // A row that is one of your own saved cases is categorised as "mine";
@@ -1177,7 +1223,8 @@ function scanPaste(){
 
   const checkedNote = `Checked ${activeKeyCount} keyword${activeKeyCount===1?"":"s"}
     (incl. NADRA / citizenship defaults) and ${activePendingCount} pending file${activePendingCount===1?"":"s"}.` +
-    (skippedBench ? ` Skipped ${skippedBench} other-bench line${skippedBench===1?"":"s"} (Bahawalpur/Multan/Rawalpindi).` : "");
+    (skippedBench ? ` Skipped ${skippedBench} other-bench line${skippedBench===1?"":"s"} (Bahawalpur/Multan/Rawalpindi).` : "") +
+    (skippedCm ? ` Folded in ${skippedCm} C.M./application line${skippedCm===1?"":"s"} already covered by their main case.` : "");
   out.innerHTML = freshRows
     ? `<div class="okbox" style="margin-top:10px"><b>${freshRows} new/updated case${freshRows===1?"":"s"}</b>
          from ${matchedRows} matched line${matchedRows===1?"":"s"} of ${rows.length} checked. ${checkedNote} See the Diary below —

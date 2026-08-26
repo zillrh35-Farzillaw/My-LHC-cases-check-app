@@ -93,6 +93,7 @@ class MainActivity : AppCompatActivity() {
             TAB_PENDING -> getString(R.string.tab_pending)
             TAB_TASKS -> getString(R.string.tab_tasks)
             TAB_SETTINGS -> getString(R.string.tab_settings)
+            TAB_CASES -> getString(R.string.tab_cases)
             else -> getString(R.string.app_name)
         }
         return true

@@ -46,6 +46,7 @@ class DiaryFragment : Fragment() {
 
     private lateinit var adapter: DiaryAdapter
     private lateinit var db: Db
+    private lateinit var loading: LoadingOverlay
 
     /** Transient (not persisted) selection state for bulk actions. */
     private val selectedHits = HashSet<Long>()
@@ -63,6 +64,7 @@ class DiaryFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         db = Db.get(requireContext())
+        loading = LoadingOverlay(b.loadingOverlay)
 
         adapter = DiaryAdapter(
             onClick = { row ->
@@ -272,6 +274,7 @@ class DiaryFragment : Fragment() {
     private fun runCheck() {
         b.swipe.isRefreshing = true
         b.btnCheck.isEnabled = false
+        loading.show("Scanning cause lists…")
         val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -280,6 +283,7 @@ class DiaryFragment : Fragment() {
             if (_b == null) return@launch
             b.swipe.isRefreshing = false
             b.btnCheck.isEnabled = true
+            loading.hide()
             reload()
 
             result.onSuccess { r ->
@@ -561,6 +565,7 @@ class DiaryFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        loading.cancel()
         _b = null
     }
 }

@@ -77,13 +77,27 @@
         </com.google.android.material.chip.ChipGroup>
     </HorizontalScrollView>
 
+    <TextView
+        android:id="@+id/caption"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_marginEnd="14dp"
+        android:layout_marginTop="6dp"
+        android:textSize="11sp"
+        android:textColor="@color/text_secondary"
+        android:text="@string/saved_cases_caption"
+        app:layout_constraintTop_toBottomOf="@id/chipScroll"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/list"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
         android:paddingBottom="88dp"
-        app:layout_constraintTop_toBottomOf="@id/chipScroll"
+        app:layout_constraintTop_toBottomOf="@id/caption"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

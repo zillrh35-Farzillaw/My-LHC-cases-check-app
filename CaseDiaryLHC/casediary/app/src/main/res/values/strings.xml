@@ -1,7 +1,8 @@
 <resources>
     <string name="app_name">Causelist Sentinel</string>
 
-    <string name="tab_cases">Cases</string>
+    <string name="tab_cases">Saved Cases</string>
+    <string name="saved_cases_caption">Added automatically when you approve a match in the Diary, or add one yourself below.</string>
     <string name="tab_diary">Diary</string>
     <string name="tab_pending">Pending</string>
     <string name="tab_tasks">Tasks</string>
@@ -29,7 +30,7 @@
     <string name="filter_archived">Archived</string>
     <string name="filter_all">All</string>
 
-    <string name="empty_cases">No cases yet.\nTap + to add your first one.</string>
+    <string name="empty_cases">No saved cases yet.\nApprove a match in the Diary, or tap + to add one yourself.</string>
     <string name="empty_diary">Nothing here yet.\nRun a check or add a hearing date to a case.</string>
 
     <string name="case_type">Case type (W.P., Crl. Misc., R.F.A.…)</string>

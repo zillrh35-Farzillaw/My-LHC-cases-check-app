@@ -9,9 +9,12 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,6 +26,12 @@ import pk.advocate.casediary.db.Case
 import pk.advocate.casediary.db.Db
 import pk.advocate.casediary.util.Dates
 
+/**
+ * "Saved Cases" — every case being tracked, whether it landed here because
+ * you approved a match in the Diary (see
+ * [pk.advocate.casediary.db.Db.resolveCaseFromApproval]) or you added it
+ * yourself with the + button. Both routes end up in the same list.
+ */
 class CasesFragment : Fragment() {
 
     private var _b: FragmentCasesBinding? = null
@@ -98,7 +107,7 @@ class CasesFragment : Fragment() {
             val fixedIds = withContext(Dispatchers.IO) { db.fixedCaseIds() }
             // The user may have typed on, or navigated away, while we queried.
             if (_b == null || status != statusFilter || q != query) return@launch
-            adapter.submit(cases, fixedIds)
+            adapter.submitList(cases.map { CaseRow(it, fixedIds.contains(it.id)) })
             b.empty.visibility = if (cases.isEmpty()) View.VISIBLE else View.GONE
         }
     }
@@ -115,18 +124,18 @@ class CasesFragment : Fragment() {
     }
 }
 
+/** One saved-case row plus whatever the list needs to know beyond the [Case] itself. */
+data class CaseRow(val case: Case, val isFixed: Boolean)
+
+private val DIFF = object : DiffUtil.ItemCallback<CaseRow>() {
+    override fun areItemsTheSame(a: CaseRow, b: CaseRow) = a.case.id == b.case.id
+    override fun areContentsTheSame(a: CaseRow, b: CaseRow) = a == b
+}
+
+/** ListAdapter + DiffUtil so a filter change or a new approved case animates
+ *  in/out and reorders instead of the whole list silently repainting. */
 class CaseAdapter(private val onClick: (Case) -> Unit) :
-    RecyclerView.Adapter<CaseAdapter.VH>() {
-
-    private val items = ArrayList<Case>()
-    private var fixedCaseIds: Set<Long> = emptySet()
-
-    fun submit(list: List<Case>, fixedIds: Set<Long> = fixedCaseIds) {
-        items.clear()
-        items.addAll(list)
-        fixedCaseIds = fixedIds
-        notifyDataSetChanged()
-    }
+    ListAdapter<CaseRow, CaseAdapter.VH>(DIFF) {
 
     class VH(val b: ItemCaseBinding) : RecyclerView.ViewHolder(b.root)
 
@@ -135,19 +144,27 @@ class CaseAdapter(private val onClick: (Case) -> Unit) :
         return VH(ItemCaseBinding.inflate(inflater, parent, false))
     }
 
-    override fun getItemCount(): Int = items.size
-
     override fun onBindViewHolder(holder: VH, position: Int) {
-        val c = items[position]
+        val (c, isFixed) = getItem(position)
+        val ctx = holder.b.root.context
         holder.b.ref.text = c.caseRef().ifBlank { "(no case number)" }
         holder.b.title.text = c.title()
+
+        val (pillText, pillBg, pillFg) = when (c.status) {
+            Case.STATUS_DECIDED -> Triple(ctx.getString(R.string.filter_decided), R.color.accent_light, R.color.accent_dark)
+            Case.STATUS_ARCHIVED -> Triple(ctx.getString(R.string.filter_archived), R.color.divider, R.color.text_secondary)
+            else -> Triple(ctx.getString(R.string.filter_active), R.color.brand_light, R.color.brand_dark)
+        }
+        holder.b.statusPill.text = pillText
+        holder.b.statusPill.setBackgroundColor(ContextCompat.getColor(ctx, pillBg))
+        holder.b.statusPill.setTextColor(ContextCompat.getColor(ctx, pillFg))
 
         val bits = ArrayList<String>()
         if (c.court.isNotBlank()) bits.add(c.court)
         if (c.judge.isNotBlank()) bits.add(c.judge)
         if (c.stage.isNotBlank()) bits.add(c.stage)
         if (c.clientName.isNotBlank()) bits.add("Client: ${c.clientName}")
-        if (fixedCaseIds.contains(c.id)) bits.add("✓ Fixed in cause list")
+        if (isFixed) bits.add("✓ Fixed in cause list")
         if (!c.watched) bits.add("Not auto-checked")
         holder.b.meta.text = bits.joinToString(" · ")
         holder.b.meta.visibility = if (bits.isEmpty()) View.GONE else View.VISIBLE

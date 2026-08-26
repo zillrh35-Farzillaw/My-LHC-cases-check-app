@@ -103,7 +103,23 @@ class Db private constructor(context: Context) :
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 note TEXT NOT NULL DEFAULT '',
-                added_at INTEGER NOT NULL DEFAULT 0
+                added_at INTEGER NOT NULL DEFAULT 0,
+                case_type TEXT NOT NULL DEFAULT '',
+                case_no TEXT NOT NULL DEFAULT '',
+                case_year TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE law_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                assigned_by TEXT NOT NULL DEFAULT '',
+                deadline INTEGER NOT NULL DEFAULT 0,
+                done INTEGER NOT NULL DEFAULT 0,
+                done_at INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -213,6 +229,30 @@ class Db private constructor(context: Context) :
             try {
                 db.execSQL("ALTER TABLE fixtures ADD COLUMN related_json TEXT NOT NULL DEFAULT '[]'")
             } catch (_: Exception) { /* already present */ }
+        }
+        if (oldVersion < 7) {
+            try {
+                db.execSQL("ALTER TABLE pending_files ADD COLUMN case_type TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE pending_files ADD COLUMN case_no TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE pending_files ADD COLUMN case_year TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS law_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    assigned_by TEXT NOT NULL DEFAULT '',
+                    deadline INTEGER NOT NULL DEFAULT 0,
+                    done INTEGER NOT NULL DEFAULT 0,
+                    done_at INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
         }
         createIndexes(db)
     }
@@ -445,6 +485,38 @@ class Db private constructor(context: Context) :
 
     fun deleteCase(id: Long) {
         writableDatabase.delete("cases", "id=?", arrayOf(id.toString()))
+    }
+
+    /**
+     * Approving a scan result should also populate the Cases tab — not just
+     * the exportable Fixed-cases report — so a case spotted by scanning
+     * becomes a fully trackable Case (hearings, fees, notes, future
+     * watching) without ever typing a case number in by hand. Only acts
+     * when a case number can be parsed out of the confirmed title;
+     * otherwise the caller's Fixed-cases entry is saved without a Case
+     * link, exactly as before. Manual "+ Add case" stays available for a
+     * case you already know the number of before it's ever spotted.
+     *
+     * @return the resolved case id, or 0 if no case number could be parsed.
+     */
+    fun resolveCaseFromApproval(titleNo: String, court: String, existingCaseId: Long): Long {
+        if (existingCaseId != 0L) return existingCaseId
+        val ref = pk.advocate.casediary.work.Matcher.parseCaseRef(titleNo) ?: return 0L
+        val existing = listCases(null, null).find { it.caseNo == ref.caseNo && it.caseYear == ref.caseYear }
+        if (existing != null) {
+            if (existing.court.isBlank() && court.isNotBlank()) existing.court = court
+            saveCase(existing)
+            return existing.id
+        }
+        val vsMatch = Regex("^(.*?)\\bvs\\.?\\b(.*)$", RegexOption.IGNORE_CASE).find(titleNo)
+        val ownRefText = "${ref.caseType} ${ref.caseNo}/${ref.caseYear}"
+        val petitioner = vsMatch?.groupValues?.get(1)?.replace(ownRefText, "", ignoreCase = true)?.trim().orEmpty()
+        val respondent = vsMatch?.groupValues?.get(2)?.replace(Regex("etc\\.?\\s*$", RegexOption.IGNORE_CASE), "")?.trim().orEmpty()
+        val c = Case(
+            caseType = ref.caseType, caseNo = ref.caseNo, caseYear = ref.caseYear,
+            petitioner = petitioner, respondent = respondent, court = court, watched = true
+        )
+        return saveCase(c)
     }
 
     fun getCase(id: Long): Case? =
@@ -824,11 +896,14 @@ class Db private constructor(context: Context) :
 
     // ------------------------------------------------------------ pending files
 
-    fun addPendingFile(title: String, note: String): Long {
+    fun addPendingFile(title: String, note: String, caseType: String = "", caseNo: String = "", caseYear: String = ""): Long {
         val cv = ContentValues().apply {
             put("title", title.trim())
             put("note", note.trim())
             put("added_at", System.currentTimeMillis())
+            put("case_type", caseType.trim())
+            put("case_no", caseNo.trim())
+            put("case_year", caseYear.trim())
         }
         return writableDatabase.insert("pending_files", null, cv)
     }
@@ -844,18 +919,72 @@ class Db private constructor(context: Context) :
         readableDatabase.query("pending_files", null, null, null, null, null, "added_at DESC")
             .use { cur ->
                 while (cur.moveToNext()) {
+                    val typeIdx = cur.getColumnIndex("case_type")
+                    val noIdx = cur.getColumnIndex("case_no")
+                    val yrIdx = cur.getColumnIndex("case_year")
                     out.add(
                         PendingFile(
                             id = cur.getLong(cur.getColumnIndexOrThrow("id")),
                             title = cur.getString(cur.getColumnIndexOrThrow("title")),
                             note = cur.getString(cur.getColumnIndexOrThrow("note")),
-                            addedAt = cur.getLong(cur.getColumnIndexOrThrow("added_at"))
+                            addedAt = cur.getLong(cur.getColumnIndexOrThrow("added_at")),
+                            caseType = if (typeIdx < 0) "" else cur.getString(typeIdx).orEmpty(),
+                            caseNo = if (noIdx < 0) "" else cur.getString(noIdx).orEmpty(),
+                            caseYear = if (yrIdx < 0) "" else cur.getString(yrIdx).orEmpty()
                         )
                     )
                 }
             }
         return out
     }
+
+    // ------------------------------------------------------------------ tasks
+
+    fun addTask(t: LawTask): Long {
+        val cv = ContentValues().apply {
+            put("title", t.title)
+            put("assigned_by", t.assignedBy)
+            put("deadline", t.deadline)
+            put("done", if (t.done) 1 else 0)
+            put("done_at", t.doneAt)
+            put("created_at", if (t.createdAt == 0L) System.currentTimeMillis() else t.createdAt)
+        }
+        return writableDatabase.insert("law_tasks", null, cv)
+    }
+
+    fun setTaskDone(id: Long, done: Boolean) {
+        val cv = ContentValues().apply {
+            put("done", if (done) 1 else 0)
+            put("done_at", if (done) System.currentTimeMillis() else 0L)
+        }
+        writableDatabase.update("law_tasks", cv, "id=?", arrayOf(id.toString()))
+    }
+
+    fun deleteTask(id: Long) {
+        writableDatabase.delete("law_tasks", "id=?", arrayOf(id.toString()))
+    }
+
+    fun getTask(id: Long): LawTask? =
+        readableDatabase.query("law_tasks", null, "id=?", arrayOf(id.toString()), null, null, null)
+            .use { cur -> if (cur.moveToFirst()) readTask(cur) else null }
+
+    fun listTasks(): List<LawTask> {
+        val out = ArrayList<LawTask>()
+        readableDatabase.query("law_tasks", null, null, null, null, null, "deadline ASC").use { cur ->
+            while (cur.moveToNext()) out.add(readTask(cur))
+        }
+        return out
+    }
+
+    private fun readTask(cur: Cursor) = LawTask(
+        id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+        title = cur.getString(cur.getColumnIndexOrThrow("title")),
+        assignedBy = cur.getString(cur.getColumnIndexOrThrow("assigned_by")),
+        deadline = cur.getLong(cur.getColumnIndexOrThrow("deadline")),
+        done = cur.getInt(cur.getColumnIndexOrThrow("done")) == 1,
+        doneAt = cur.getLong(cur.getColumnIndexOrThrow("done_at")),
+        createdAt = cur.getLong(cur.getColumnIndexOrThrow("created_at"))
+    )
 
     // ------------------------------------------------------------- fixed cases
 
@@ -966,7 +1095,7 @@ class Db private constructor(context: Context) :
 
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 6
+        private const val VERSION = 7
 
         @Volatile
         private var instance: Db? = null

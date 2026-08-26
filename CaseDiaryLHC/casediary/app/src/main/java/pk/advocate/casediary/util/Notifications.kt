@@ -18,9 +18,11 @@ object Notifications {
 
     const val CH_FIXTURES = "fixtures"
     const val CH_REMINDERS = "reminders"
+    const val CH_TASKS = "tasks"
 
     private const val ID_FIXTURES = 1001
     private const val ID_REMINDERS = 1002
+    private const val ID_TASK_BASE = 2000
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -43,8 +45,18 @@ object Notifications {
             description = context.getString(R.string.ch_reminders_desc)
         }
 
+        val tasks = NotificationChannel(
+            CH_TASKS,
+            context.getString(R.string.ch_tasks),
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = context.getString(R.string.ch_tasks_desc)
+            enableVibration(true)
+        }
+
         nm.createNotificationChannel(fixtures)
         nm.createNotificationChannel(reminders)
+        nm.createNotificationChannel(tasks)
     }
 
     fun canNotify(context: Context): Boolean {
@@ -110,6 +122,23 @@ object Notifications {
             .build()
 
         safeNotify(context, ID_REMINDERS, n)
+    }
+
+    /** Fired at (or shortly after) a task's own deadline — see [pk.advocate.casediary.work.TaskAlerts]. */
+    fun notifyTaskDue(context: Context, taskId: Long, title: String) {
+        if (!canNotify(context)) return
+
+        val n = NotificationCompat.Builder(context, CH_TASKS)
+            .setSmallIcon(R.drawable.ic_task)
+            .setContentTitle(context.getString(R.string.notif_task_due, title))
+            .setContentText(context.getString(R.string.tab_tasks))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context, MainActivity.TAB_TASKS))
+            .build()
+
+        safeNotify(context, ID_TASK_BASE + (taskId % 10_000).toInt(), n)
     }
 
     private fun safeNotify(context: Context, id: Int, n: android.app.Notification) {

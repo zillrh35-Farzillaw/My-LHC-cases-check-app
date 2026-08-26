@@ -57,9 +57,15 @@ class PendingFragment : Fragment() {
             return
         }
         val note = b.noteInput.text?.toString()?.trim().orEmpty()
-        db.addPendingFile(title, note)
+        val caseType = b.typeInput.text?.toString()?.trim().orEmpty()
+        val caseNo = b.noInput.text?.toString()?.trim().orEmpty()
+        val caseYear = b.yearInput.text?.toString()?.trim().orEmpty()
+        db.addPendingFile(title, note, caseType, caseNo, caseYear)
         b.titleInput.setText("")
         b.noteInput.setText("")
+        b.typeInput.setText("")
+        b.noInput.setText("")
+        b.yearInput.setText("")
         render()
     }
 
@@ -75,12 +81,15 @@ class PendingFragment : Fragment() {
             ib.title.text = p.title
             ib.note.visibility = if (p.note.isBlank()) View.GONE else View.VISIBLE
             ib.note.text = p.note
+            val ref = p.caseRef()
+            ib.ref.visibility = if (ref.isBlank()) View.GONE else View.VISIBLE
+            ib.ref.text = ref
             ib.added.text = "Added ${Dates.fmt(p.addedAt)}"
 
             val matchCount = fixtures.count { it.pendingId == p.id }
             if (matchCount > 0) {
                 ib.matches.visibility = View.VISIBLE
-                ib.matches.text = "$matchCount possible match${if (matchCount == 1) "" else "es"} — review in Diary"
+                ib.matches.text = "$matchCount exact match${if (matchCount == 1) "" else "es"} found — review in Diary"
             } else {
                 ib.matches.visibility = View.GONE
             }

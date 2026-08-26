@@ -33,6 +33,16 @@
             android:textColor="@color/text_secondary" />
 
         <TextView
+            android:id="@+id/ref"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent_dark"
+            android:visibility="gone" />
+
+        <TextView
             android:id="@+id/added"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

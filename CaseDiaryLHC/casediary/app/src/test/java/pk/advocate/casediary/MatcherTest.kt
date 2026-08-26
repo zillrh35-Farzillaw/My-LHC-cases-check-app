@@ -128,7 +128,7 @@ class MatcherTest {
         )
     }
 
-    // ---------------------------------------------------- pending-file fuzzy matching
+    // ---------------------------------------------------- pending-file exact matching
 
     // Three files that deliberately share common words ("Khan", "Chairman", "NADRA") —
     // this is what a real docket of dozens of NADRA files looks like, and it's what
@@ -151,13 +151,11 @@ class MatcherTest {
     }
 
     @Test
-    fun `pending file title tolerates a missing common word on the non-petitioner side`() {
-        // The full petitioner ("Alpha Ali Khan") is present; "NADRA" — common
-        // across all three pending files and not part of the petitioner — is
-        // dropped and tolerated. (The petitioner's own words are never
-        // tolerated as missing — see the exactness test below.)
+    fun `pending file title does not match when even one of its own words is missing`() {
+        // No fuzzy tolerance at all: "NADRA" is part of the title, so its
+        // absence — even on the non-petitioner side — must not match.
         val row = "3 | ALPHA ALI KHAN VS SOMETHING ELSE | Writ Petition 55555/2026"
-        assertTrue(pendingHits(row).any { it.pendingId == 5L })
+        assertFalse(pendingHits(row).any { it.pendingId == 5L })
     }
 
     @Test
@@ -293,5 +291,46 @@ class MatcherTest {
         assertTrue(Matcher.findHits(wrongPetitioner, probes).none { it.kind == WatchTerm.KIND_PENDING })
         val rightPetitioner = "Fahad Rasheed vs NADRA Chairman etc, first hearing"
         assertTrue(Matcher.findHits(rightPetitioner, probes).any { it.pendingId == 20L })
+    }
+
+    // ------------------------------------------------------- pending-file case-number probe
+
+    @Test
+    fun `a pending file with a registered case number matches on that number alone`() {
+        val onePending = listOf(
+            PendingFile(id = 30, title = "Some Long Title That Would Not Appear Verbatim",
+                caseType = "W.P.", caseNo = "9999", caseYear = "2026")
+        )
+        val probes = Matcher.compile(emptyList(), emptyList(), onePending)
+        val row = "5 | W.P. No. 9999 / 2026 | A Totally Different Party Vs The State"
+        assertTrue(Matcher.findHits(row, probes).any { it.pendingId == 30L && it.kind == WatchTerm.KIND_CASE })
+    }
+
+    @Test
+    fun `a pending file without a registered case number has no case-number probe`() {
+        val onePending = listOf(PendingFile(id = 31, title = "Some Party Vs Another"))
+        val probes = Matcher.compile(emptyList(), emptyList(), onePending)
+        assertTrue(probes.none { it.pendingId == 31L && it.kind == WatchTerm.KIND_CASE })
+    }
+
+    // ------------------------------------------------------------- parseCaseRef
+
+    @Test
+    fun `parseCaseRef pulls type, number and year out of free text`() {
+        val ref = Matcher.parseCaseRef("W.P. No. 12345/2026 Muhammad Bilal Vs. The State")
+        assertEquals("W.P.", ref?.caseType)
+        assertEquals("12345", ref?.caseNo)
+        assertEquals("2026", ref?.caseYear)
+    }
+
+    @Test
+    fun `parseCaseRef expands a two digit year`() {
+        val ref = Matcher.parseCaseRef("W.P.No.001/26 Someone vs State")
+        assertEquals("2026", ref?.caseYear)
+    }
+
+    @Test
+    fun `parseCaseRef returns null when there is no case number in the text`() {
+        assertEquals(null, Matcher.parseCaseRef("Someone vs State, no case number here"))
     }
 }

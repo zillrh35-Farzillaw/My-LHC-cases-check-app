@@ -342,7 +342,7 @@ class DiaryFragment : Fragment() {
         val f = db.listFixtures().find { it.id == fixtureId } ?: return
         val pending = if (f.pendingId != 0L) db.listPendingFiles().find { it.id == f.pendingId } else null
         val savedCase = if (f.caseId != 0L) db.getCase(f.caseId) else null
-        val defaultTitle = pending?.title
+        val defaultTitle = pending?.let { p -> p.caseRef().ifBlank { null }?.let { "$it ${p.title}" } ?: p.title }
             ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
             ?: f.termsLabel()
 
@@ -376,15 +376,17 @@ class DiaryFragment : Fragment() {
                     Snackbar.make(b.root, "Add the case title", Snackbar.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
+                val court = courtInput.text?.toString()?.trim().orEmpty()
+                val caseId = db.resolveCaseFromApproval(titleNo, court, f.caseId)
                 db.addFixedCase(
                     FixedCase(
                         titleNo = titleNo,
-                        court = courtInput.text?.toString()?.trim().orEmpty(),
+                        court = court,
                         prayer = prayerInput.text?.toString()?.trim().orEmpty(),
                         proceedings = proceedingsInput.text?.toString()?.trim().orEmpty(),
                         causelistNo = causelistInput.text?.toString()?.trim().orEmpty(),
                         sourceRaw = f.fullRaw(),
-                        caseId = f.caseId
+                        caseId = caseId
                     )
                 )
                 if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
@@ -404,10 +406,11 @@ class DiaryFragment : Fragment() {
             val f = fixtures.find { it.id == id } ?: continue
             val pending = if (f.pendingId != 0L) db.listPendingFiles().find { it.id == f.pendingId } else null
             val savedCase = if (f.caseId != 0L) db.getCase(f.caseId) else null
-            val titleNo = pending?.title
+            val titleNo = pending?.let { p -> p.caseRef().ifBlank { null }?.let { "$it ${p.title}" } ?: p.title }
                 ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
                 ?: f.termsLabel()
-            db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.fullRaw(), caseId = f.caseId))
+            val caseId = db.resolveCaseFromApproval(titleNo, "", f.caseId)
+            db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.fullRaw(), caseId = caseId))
             if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
             db.deleteFixture(f.id)
         }

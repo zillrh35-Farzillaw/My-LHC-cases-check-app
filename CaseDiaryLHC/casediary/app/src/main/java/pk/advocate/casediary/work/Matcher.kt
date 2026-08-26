@@ -21,26 +21,10 @@ object Matcher {
     private val STOPWORDS = setOf("vs", "etc", "and", "the", "of", "in", "re", "mst")
 
     /** Pending-file titles keep more of their words than a keyword would —
-     *  stopwords and honorifics are dropped, but nothing else is filtered by length. */
+     *  stopwords and honorifics are dropped, but every remaining word must
+     *  actually appear in the row; there is no tolerance for a missing one. */
     private fun pendingTokens(title: String): List<String> =
         normalize(title).split(' ').filter { it.length >= 3 && it !in STOPWORDS }
-
-    private val PETITIONER_SPLIT = Regex("\\bvs\\b", RegexOption.IGNORE_CASE)
-
-    /** Everything before "vs" in a pending-file title is the petitioner — the
-     *  client whose case this is. Those words must match a scanned row
-     *  exactly (see [compile]), no tolerance; only the respondent /
-     *  boilerplate side of the title keeps the fuzzy, may-miss matching. */
-    private fun pendingPetitionerTokens(title: String): Set<String> =
-        pendingTokens(PETITIONER_SPLIT.split(title, limit = 2).firstOrNull() ?: title).toHashSet()
-
-    /** How many of a fuzzy probe's tokens are allowed to miss on a row. */
-    private fun allowedMisses(n: Int): Int = when {
-        n <= 2 -> 0
-        n <= 4 -> 1
-        n <= 7 -> 2
-        else -> 3
-    }
 
     /** Collapse punctuation and whitespace so two spellings compare equal. */
     fun normalize(input: String): String {
@@ -101,11 +85,7 @@ object Matcher {
         val pendingId: Long,
         val tokens: List<String>,
         /** Key used to collapse duplicate hits on the same row. */
-        val key: String,
-        /** Pending-file probes tolerate a few missing tokens; everything else needs all of them. */
-        val fuzzy: Boolean = false,
-        /** For fuzzy probes: this title's own rare words, which must always be present. */
-        val mustMatch: Set<String> = emptySet()
+        val key: String
     ) {
         /** Long tokens may also match inside a run-together word. */
         val longTokens: List<String> = tokens.filter { it.length >= 6 }
@@ -147,22 +127,21 @@ object Matcher {
             }
         }
 
-        // Words like "Khan", "Chairman" or "NADRA" repeat across dozens of pending
-        // titles — tolerating a miss on those is fine, but a title must never match
-        // purely on words it shares with every other file. Each title's own rare
-        // words (appearing in at most 2 pending titles) must always be present;
-        // only the common words it shares with many other titles may be missed.
-        val freq = HashMap<String, Int>()
-        for (pf in pending) {
-            for (tok in pendingTokens(pf.title).toHashSet()) freq[tok] = (freq[tok] ?: 0) + 1
-        }
+        // No fuzzy tolerance: a pending file only lists as a hit when every one
+        // of its (stopword-stripped) title words is actually present in the
+        // row — no "possible match" guesswork, an exact title match only.
         for (pf in pending) {
             val toks = pendingTokens(pf.title)
             if (toks.isEmpty()) continue
-            val petitionerToks = pendingPetitionerTokens(pf.title)
-            var mustMatch = toks.filter { it in petitionerToks || (freq[it] ?: 0) <= 2 }.toHashSet()
-            if (mustMatch.isEmpty()) mustMatch = hashSetOf(toks[0])
-            out.add(Probe(pf.title, WatchTerm.KIND_PENDING, 0L, pf.id, toks, "pending:${pf.id}", fuzzy = true, mustMatch = mustMatch))
+            out.add(Probe(pf.title, WatchTerm.KIND_PENDING, 0L, pf.id, toks, "pending:${pf.id}"))
+
+            // Once a pending file's case number is known (registered but not yet
+            // fixed), match it exactly too — alongside the exact title match.
+            if (pf.caseNo.isNotBlank() && pf.caseYear.isNotBlank()) {
+                usableTokens("${pf.caseNo} ${pf.caseYear}")?.let {
+                    out.add(Probe(pf.caseRef(), WatchTerm.KIND_CASE, 0L, pf.id, it, "pendingcase:${pf.id}"))
+                }
+            }
         }
 
         return out
@@ -195,18 +174,10 @@ object Matcher {
     private fun tokenPresent(norm: String, rowTokens: Set<String>, t: String): Boolean =
         rowTokens.contains(t) || (t.length >= 6 && norm.contains(t))
 
-    /** Non-fuzzy probes need every token; fuzzy (pending-file) probes tolerate a few misses
-     *  of their common words, but never of their distinctive (mustMatch) words. */
-    private fun probeMatches(norm: String, rowTokens: Set<String>, p: Probe): Boolean {
-        var hitCount = 0
-        for (t in p.tokens) {
-            if (tokenPresent(norm, rowTokens, t)) hitCount++
-        }
-        val misses = p.tokens.size - hitCount
-        if (!p.fuzzy) return misses == 0
-        if (misses > allowedMisses(p.tokens.size)) return false
-        return p.mustMatch.all { tokenPresent(norm, rowTokens, it) }
-    }
+    /** Every probe (keywords, case numbers, saved-case parties, pending files)
+     *  requires every one of its tokens to be present — an exact match only. */
+    private fun probeMatches(norm: String, rowTokens: Set<String>, p: Probe): Boolean =
+        p.tokens.all { tokenPresent(norm, rowTokens, it) }
 
     /** Convenience for one-off checks and tests; compiles then matches. */
     fun findHits(row: String, terms: List<WatchTerm>, cases: List<Case>): List<Hit> =
@@ -270,6 +241,16 @@ object Matcher {
         val n = no.trimStart('0').ifEmpty { "0" }
         val y = if (yr.length == 2) "20$yr" else yr
         return "*:$n:$y"
+    }
+
+    data class ParsedCaseRef(val caseType: String, val caseNo: String, val caseYear: String)
+
+    /** Pulls a "W.P. 12345/2026"-shaped case reference out of free text —
+     *  used when approving a Diary hit to auto-create a full Case record. */
+    fun parseCaseRef(text: String): ParsedCaseRef? {
+        val m = OWN_REF_RE.find(text) ?: return null
+        val yr = m.groupValues[3].let { if (it.length == 2) "20$it" else it }
+        return ParsedCaseRef(m.groupValues[1].trim(), m.groupValues[2], yr)
     }
 
     fun isCmRow(row: String): Boolean = CM_LEAD_RE.containsMatchIn(row)

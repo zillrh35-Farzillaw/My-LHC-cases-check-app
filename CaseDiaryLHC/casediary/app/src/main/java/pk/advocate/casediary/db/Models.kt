@@ -153,8 +153,23 @@ data class PendingFile(
     var id: Long = 0,
     var title: String = "",
     var note: String = "",
-    var addedAt: Long = 0L
-)
+    var addedAt: Long = 0L,
+    /** Optional — once the file is registered (but still not fixed/listed), its
+     *  case number can be added for an exact match alongside the fuzzy title one. */
+    var caseType: String = "",
+    var caseNo: String = "",
+    var caseYear: String = ""
+) {
+    /** "W.P. 12345/2026", or blank if no case number has been added yet. */
+    fun caseRef(): String {
+        if (caseNo.isBlank()) return ""
+        val sb = StringBuilder()
+        if (caseType.isNotBlank()) sb.append(caseType.trim()).append(' ')
+        sb.append(caseNo.trim())
+        if (caseYear.isNotBlank()) sb.append('/').append(caseYear.trim())
+        return sb.toString().trim()
+    }
+}
 
 /**
  * A row in the exportable "Urgent Cases Report" — mirrors the lawyer's own
@@ -172,4 +187,21 @@ data class FixedCase(
     var sourceRaw: String = "",
     /** 0 unless this came from (and links back to) a case saved in the Cases tab. */
     var caseId: Long = 0
+)
+
+/**
+ * Something a senior advocate or officer told the lawyer to do, with a
+ * deadline — tracked here so it's never missed. Unlike the web app, the
+ * Android build can schedule a real alert for the deadline itself (see
+ * [pk.advocate.casediary.work.TaskAlarmReceiver]), not just a warning shown
+ * while the app happens to be open.
+ */
+data class LawTask(
+    var id: Long = 0,
+    var title: String = "",
+    var assignedBy: String = "",
+    var deadline: Long = 0L,
+    var done: Boolean = false,
+    var doneAt: Long = 0L,
+    var createdAt: Long = 0L
 )

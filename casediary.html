@@ -458,28 +458,12 @@ function caseTitle(c){
   if(p && r) return p + " vs. " + r;
   return p || r || "(untitled)";
 }
-/* Pending-file titles are matched fuzzily: a title's own stopwords ("vs",
-   "etc", honorifics) are dropped, and a handful of the remaining tokens are
-   allowed to miss — the court may print a name shorter, longer, or slightly
-   differently than the file title supplied. */
+/* Pending-file titles are matched exactly: a title's own stopwords ("vs",
+   "etc", honorifics) are dropped before comparing, but every remaining word
+   must actually appear in the row — no tolerance for a missing word. */
 const STOPWORDS = new Set(["vs","etc","and","the","of","in","re","mst"]);
 function pendingTokens(title){
   return normalize(title).split(" ").filter(t => t.length >= 3 && !STOPWORDS.has(t));
-}
-/* Everything before "vs" in a pending-file title is the petitioner — the
-   client whose case this is. That part must match a scanned row exactly
-   (every one of its words present), no tolerance; only the respondent /
-   boilerplate side of the title ("etc.", repeated department names…)
-   keeps the fuzzy, may-miss-a-common-word matching. */
-function pendingPetitionerTokens(title){
-  const m = title.match(/^(.*?)\bvs\b/i);
-  return new Set(pendingTokens(m ? m[1] : title));
-}
-function allowedMisses(n){
-  if(n <= 2) return 0;
-  if(n <= 4) return 1;
-  if(n <= 7) return 2;
-  return 3;
 }
 
 /* Tokenise every keyword once per scan, not once per row. */
@@ -507,24 +491,15 @@ function compile(keys, cases, pending){
       }
     }
   }
-  /* Words like "Khan", "Chairman" or "NADRA" repeat across dozens of pending
-     titles — tolerating a miss on those is fine, but a title must never match
-     purely on words it shares with every other file. Each title's OWN rare
-     words (appearing in at most 2 pending titles) must always be present;
-     only the common words it shares with many other titles may be missed. */
+  /* No fuzzy tolerance: a pending file only lists as a hit when every one of
+     its (stopword-stripped) title words is actually present in the row —
+     no "possible match" guesswork, an exact title match only. */
   const pendingList = (S.settings.pendingFilesEnabled === false) ? [] : (pending || []);
-  const freq = new Map();
-  for(const pf of pendingList){
-    for(const tok of new Set(pendingTokens(pf.title))) freq.set(tok, (freq.get(tok)||0) + 1);
-  }
   for(const pf of pendingList){
     const t = pendingTokens(pf.title);
     if(!t.length) continue;
-    const petitionerToks = pendingPetitionerTokens(pf.title);
-    let mustMatch = t.filter(tok => petitionerToks.has(tok) || (freq.get(tok)||0) <= 2);
-    if(!mustMatch.length) mustMatch = [t[0]]; // every word is common — anchor on the first anyway
     probes.push({label:pf.title, kind:"PENDING", caseId:0, pendingId:pf.id, tokens:t,
-      key:"pending:"+pf.id, fuzzy:true, mustMatch});
+      key:"pending:"+pf.id, fuzzy:false});
     // Once a pending file's case number is known (registered but not yet
     // fixed), match it exactly too — precise, alongside the fuzzy title match.
     if(pf.caseNo && pf.caseYear){
@@ -540,9 +515,8 @@ function compile(keys, cases, pending){
 }
 /* Word-level, not substring: "Ali" must not match "Salim".
    Tokens of 6+ characters may also match inside a run-together word.
-   Non-fuzzy probes (keywords, case numbers, saved-case parties) still
-   require every token; fuzzy (pending-file) probes tolerate a few misses of
-   their common words, but never of their distinctive (mustMatch) words. */
+   Every probe (keywords, case numbers, saved-case parties, pending files)
+   requires every one of its tokens to be present — an exact match only. */
 function findHits(row, probes){
   if(!probes.length) return [];
   const norm = normalize(row);
@@ -551,15 +525,7 @@ function findHits(row, probes){
   const present = t => set.has(t) || (t.length >= 6 && norm.indexOf(t) !== -1);
   const out = new Map();
   for(const p of probes){
-    let hitCount = 0;
-    for(const t of p.tokens){ if(present(t)) hitCount++; }
-    const misses = p.tokens.length - hitCount;
-    let ok;
-    if(p.fuzzy){
-      ok = misses <= allowedMisses(p.tokens.length) && p.mustMatch.every(present);
-    } else {
-      ok = misses === 0;
-    }
+    const ok = p.tokens.every(present);
     if(ok && !out.has(p.key)) out.set(p.key, {term:p.label, kind:p.kind, caseId:p.caseId, pendingId:p.pendingId||0});
   }
   return [...out.values()];
@@ -927,7 +893,7 @@ function renderPending(){
         <div class="ttl" style="font-weight:700">${esc(p.title)}</div>
         ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ""}
         <div class="meta">Added ${esc(fmt(p.addedAt))}</div>
-        ${matches.length ? `<span class="pill warn">${matches.length} possible match${matches.length===1?"":"es"} — review in Diary</span>` : ""}
+        ${matches.length ? `<span class="pill warn">${matches.length} exact match${matches.length===1?"":"es"} found — review in Diary</span>` : ""}
         <div class="row" style="margin-top:10px">
           ${matches.length ? `<button class="btn3" onclick="switchTab('diary')">Review in Diary</button>` : ""}
           <button class="btnDanger" onclick="removePending(${p.id})">Remove</button>

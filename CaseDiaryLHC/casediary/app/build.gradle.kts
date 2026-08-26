@@ -23,6 +23,23 @@ android {
         buildConfigField("String", "GITHUB_REPO", "\"zillrh35-Farzillaw/My-LHC-cases-check-app\"")
     }
 
+    // A fresh CI runner has no ~/.android/debug.keystore, so Gradle's default
+    // behaviour is to auto-generate a brand-new one — with a brand-new random
+    // key — on every single build. Every APK would then carry a different
+    // signature, and Android refuses to install one app "over" another
+    // signed with a different key ("package conflicts with an existing
+    // package"), which defeats the whole point of the in-app update checker.
+    // Signing every build with this one committed keystore instead keeps the
+    // signature identical release after release, so updates install in place.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -30,6 +47,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

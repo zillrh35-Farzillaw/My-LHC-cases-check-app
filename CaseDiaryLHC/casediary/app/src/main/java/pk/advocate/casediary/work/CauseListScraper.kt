@@ -115,10 +115,11 @@ class CauseListScraper(private val context: Context) {
         val terms = db.listWatchTerms(onlyEnabled = true)
         val cases = db.listCases(null, null)
         val pending = db.listPendingFiles()
-        db.insertScanRows(sourceLabel, rowsIn)
+        val merged = Matcher.mergeSplitCmLines(rowsIn)
+        db.insertScanRows(sourceLabel, merged)
 
         val prefs = Prefs(context)
-        val rows = if (prefs.principalSeatOnly) rowsIn.filterNot { Matcher.isOtherBench(it) } else rowsIn
+        val rows = if (prefs.principalSeatOnly) merged.filterNot { Matcher.isOtherBench(it) } else merged
         // Section-level pause: the lawyer can turn off pending-file matching for
         // the whole list at once (e.g. while tidying it up) without deleting it.
         val activePending = if (prefs.pendingFilesEnabled) pending else emptyList()

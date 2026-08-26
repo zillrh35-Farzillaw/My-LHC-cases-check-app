@@ -278,6 +278,63 @@ class MatcherTest {
         assertTrue(Matcher.ownCaseRefs(mainRow).contains("*:4001:2026"))
     }
 
+    // -------------------------------------------- real LHC cause-list formats
+
+    @Test
+    fun `a C M row is still recognised when a repeated category comes before CM, not just at line start`() {
+        // Confirmed against a real LHC export: a C.M.'s own row is prefixed
+        // by "and" and the repeated category text before "CM" ever appears —
+        // isCmRow must not require the designation at the very start.
+        val row = "and | Writ - Misc. Writ - Ombudsman | CM/1/48064/26 | Lahore Electric Supply Co Vs Consultant etc"
+        assertTrue(Matcher.isCmRow(row))
+        assertTrue(Matcher.cmParentRefs(row).contains("*:48064:2026"))
+    }
+
+    @Test
+    fun `a bare Lahore case number with no type prefix still yields a loose own ref`() {
+        // Confirmed against a real LHC export: the main case's own Case#
+        // column is a bare "number/year" — the case type lives in a separate
+        // "category" column and is never glued to the number.
+        val row = "1 | Writ - Misc. Writ - Ombudsman | 48064/26 | Lahore Electric Supply Co Vs Consultant etc"
+        assertFalse(Matcher.isCmRow(row))
+        assertTrue(Matcher.ownCaseRefs(row).contains("*:48064:2026"))
+    }
+
+    @Test
+    fun `a circuit-bench bracketed case number yields a loose own ref`() {
+        val row = "1 | Crl. Misc.-Pre-arrest Bail | [6458-B-26] | MUHAMMAD WAQAS AKBAR VS STATE ETC"
+        assertFalse(Matcher.isCmRow(row))
+        assertTrue(Matcher.ownCaseRefs(row).contains("*:6458:2026"))
+    }
+
+    @Test
+    fun `a circuit-bench C M row spelled out with brackets and in is recognised`() {
+        val row = "and | Writ Petition-Direction-Medical Board | [01-26] in [10060-26] | MANZOOR HUSSAIN VS STATE ETC"
+        assertTrue(Matcher.isCmRow(row))
+        assertTrue(Matcher.cmParentRefs(row).contains("*:10060:2026"))
+    }
+
+    @Test
+    fun `mergeSplitCmLines stitches a table cell that wrapped across lines back together`() {
+        // A WebView's innerText (or a page-to-text copy) can split a single
+        // cell's "childNo / in / parentNo" content across three physical lines.
+        val rows = listOf(
+            "and\tWrit Petition-Direction-Medical Board\t[01-26]",
+            "in",
+            "[10060-26]\tMANZOOR HUSSAIN VS STATE ETC\t[6211] Mrs. Saima Kanwal"
+        )
+        val merged = Matcher.mergeSplitCmLines(rows)
+        assertEquals(1, merged.size)
+        assertTrue(Matcher.isCmRow(merged[0]))
+        assertTrue(Matcher.cmParentRefs(merged[0]).contains("*:10060:2026"))
+    }
+
+    @Test
+    fun `mergeSplitCmLines leaves ordinary rows untouched`() {
+        val rows = listOf("1 | W.P. No. 12345 / 2025 | Muhammad Bilal Vs. The State")
+        assertEquals(rows, Matcher.mergeSplitCmLines(rows))
+    }
+
     // ------------------------------------------------------- pending-file petitioner exactness
 
     @Test

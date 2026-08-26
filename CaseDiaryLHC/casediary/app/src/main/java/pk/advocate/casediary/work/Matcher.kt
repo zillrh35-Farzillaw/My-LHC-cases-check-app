@@ -184,7 +184,13 @@ object Matcher {
         findHits(row, compile(terms, cases))
 
     private val OTHER_BENCH = Regex("\\b(bahawalpur|multan|rawalpindi)\\b", RegexOption.IGNORE_CASE)
-    private val BRACKETED_CASE_RE = Regex("\\[[^\\[\\]]{2,40}/\\d{2,4}\\]")
+    /** Circuit-bench (Bahawalpur/Multan/Rawalpindi) case numbers are bracketed
+     *  and HYPHEN-delimited — "[6458-B-26]" or "[10060-26]" — confirmed against
+     *  a real LHC export; Principal Seat (Lahore) rows never use brackets.
+     *  Also used for own/parent case-ref extraction — see [BRACKET_CORE]. */
+    private const val BRACKET_CORE = "\\[(\\d{2,7})(?:-[A-Za-z]{1,4})?-(\\d{2,4})\\]"
+    private const val BRACKET_CORE_NC = "\\[\\d{2,7}(?:-[A-Za-z]{1,4})?-\\d{2,4}\\]"
+    private val BRACKETED_CASE_RE = Regex(BRACKET_CORE)
 
     /**
      * Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
@@ -207,23 +213,54 @@ object Matcher {
      * matter, so callers (see [pk.advocate.casediary.work.CauseListScraper])
      * fold it back into the main case instead of listing it separately.
      *
-     * The court prints the parent case two different ways: sometimes spelled
-     * out ("C.M.No.11/2026 in W.P.No.4001/2026"), sometimes folded straight
-     * into the C.M.'s own number as a third segment ("C.M.No.11/4001/2026" —
-     * application-no / main-case-no / year, no "in" at all). Both are handled.
+     * Confirmed against a real LHC "Urgent Cause List" export, the court
+     * prints a C.M./application's parent case three different ways depending
+     * on bench:
+     * - Lahore Principal Seat main rows print a BARE "number/year" with no
+     *   case-type text next to it at all (the type lives in a separate
+     *   "category" column) — e.g. Case# "48064/26" for the main case, and
+     *   its C.M. as a third segment folded into the C.M.'s own number,
+     *   "CM/1/48064/26" (application-no/main-no/year, no "in" at all). The
+     *   C.M. row is also prefixed by a repeated "and"/category before "CM"
+     *   ever appears, so detecting it must not require "CM" at the very
+     *   start of the row.
+     * - Circuit-bench rows (Multan/Bahawalpur/Rawalpindi) use bracketed,
+     *   HYPHEN-delimited numbers instead of slashes — "[6458-B-26]" or
+     *   "[10060-26]" — and spell the parent out as "[childNo] in [parentNo]".
+     *   A page-to-text copy (or a WebView's innerText) can split that "in"
+     *   across its own line when the table cell itself wraps, so the row
+     *   list is re-joined (see [pk.advocate.casediary.work.CauseListScraper])
+     *   before any of this runs.
      */
     private const val CASE_TYPE_ALT =
         "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
             "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?"
     private const val CM_DESIGNATION = "(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)"
+    /** The gap between the designation and its number varies: "C.M.No.11/2026"
+     *  (word "No." then number), but the real, confirmed Lahore form is simply
+     *  "CM/1/48064/26" — no "No.", the designation is followed immediately by
+     *  a slash. This gap allows either. */
+    private const val CM_GAP = "\\s*/?\\s*(?:No\\.?)?\\s*/?\\s*"
+    /** Not anchored to the start of the row: real rows prefix the C.M.'s own
+     *  entry with a repeated "and"/category before the "CM" text ever appears. */
     private val CM_LEAD_RE = Regex(
-        "^\\s*(?:\\d+\\s*[|.]?\\s*)?$CM_DESIGNATION\\s*(?:No\\.?)?\\s*\\d+(?:\\s*/\\s*\\d+){1,2}\\b",
+        "\\b$CM_DESIGNATION$CM_GAP\\d+(?:\\s*/\\s*\\d+){1,2}\\b",
         RegexOption.IGNORE_CASE
     )
     private val OWN_REF_RE = Regex("\\b($CASE_TYPE_ALT)\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", RegexOption.IGNORE_CASE)
     private val CM_PARENT_RE = Regex("\\bin\\s+($CASE_TYPE_ALT)\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", RegexOption.IGNORE_CASE)
     private val CM_EMBEDDED_PARENT_RE = Regex(
-        "$CM_DESIGNATION\\s*(?:No\\.?)?\\s*\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b",
+        "$CM_DESIGNATION$CM_GAP\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b",
+        RegexOption.IGNORE_CASE
+    )
+    /** Lahore main-case rows with no case-type text next to the number at
+     *  all — the fallback once OWN_REF_RE (which requires a type word) comes
+     *  up empty. */
+    private val BARE_CASE_NO_RE = Regex("\\b(\\d{2,7})\\s*/\\s*(\\d{2,4})\\b")
+    /** A circuit-bench C.M./sub-application spells its parent out as
+     *  "[childNo] in [parentNo]" instead of folding it into its own number. */
+    private val BRACKET_CM_RE = Regex(
+        "$BRACKET_CORE_NC\\s*in\\s*$BRACKET_CORE",
         RegexOption.IGNORE_CASE
     )
 
@@ -234,8 +271,9 @@ object Matcher {
         return "$type:$no:$yr"
     }
 
-    /** Type-agnostic identity: used when the parent's own case-type text isn't
-     *  printed (the embedded C.M.No.<app>/<main>/<year> form), so a plain
+    /** Type-agnostic identity: used whenever the parent's own case-type text
+     *  isn't printed (the embedded C.M.No.<app>/<main>/<year> form, a bare
+     *  Lahore number/year, or a circuit-bench bracketed number), so a plain
      *  number+year is the only thing to match on. */
     private fun looseCaseRef(no: String, yr: String): String {
         val n = no.trimStart('0').ifEmpty { "0" }
@@ -248,16 +286,28 @@ object Matcher {
     /** Pulls a "W.P. 12345/2026"-shaped case reference out of free text —
      *  used when approving a Diary hit to auto-create a full Case record. */
     fun parseCaseRef(text: String): ParsedCaseRef? {
-        val m = OWN_REF_RE.find(text) ?: return null
-        val yr = m.groupValues[3].let { if (it.length == 2) "20$it" else it }
-        return ParsedCaseRef(m.groupValues[1].trim(), m.groupValues[2], yr)
+        OWN_REF_RE.find(text)?.let {
+            val yr = it.groupValues[3].let { y -> if (y.length == 2) "20$y" else y }
+            return ParsedCaseRef(it.groupValues[1].trim(), it.groupValues[2], yr)
+        }
+        BARE_CASE_NO_RE.find(text)?.let {
+            val yr = it.groupValues[2].let { y -> if (y.length == 2) "20$y" else y }
+            return ParsedCaseRef("", it.groupValues[1], yr)
+        }
+        BRACKETED_CASE_RE.find(text)?.let {
+            val yr = it.groupValues[2].let { y -> if (y.length == 2) "20$y" else y }
+            return ParsedCaseRef("", it.groupValues[1], yr)
+        }
+        return null
     }
 
-    fun isCmRow(row: String): Boolean = CM_LEAD_RE.containsMatchIn(row)
+    fun isCmRow(row: String): Boolean = CM_LEAD_RE.containsMatchIn(row) || BRACKET_CM_RE.containsMatchIn(row)
 
     fun ownCaseRefs(row: String): List<String> {
-        val m = OWN_REF_RE.find(row) ?: return emptyList()
-        return listOf(canonicalCaseRef(m), looseCaseRef(m.groupValues[2], m.groupValues[3]))
+        OWN_REF_RE.find(row)?.let { return listOf(canonicalCaseRef(it), looseCaseRef(it.groupValues[2], it.groupValues[3])) }
+        BARE_CASE_NO_RE.find(row)?.let { return listOf(looseCaseRef(it.groupValues[1], it.groupValues[2])) }
+        BRACKETED_CASE_RE.find(row)?.let { return listOf(looseCaseRef(it.groupValues[1], it.groupValues[2])) }
+        return emptyList()
     }
 
     fun cmParentRefs(row: String): List<String> {
@@ -268,6 +318,31 @@ object Matcher {
         }
         CM_EMBEDDED_PARENT_RE.find(row)?.let {
             out.add(looseCaseRef(it.groupValues[1], it.groupValues[2]))
+        }
+        BRACKET_CM_RE.find(row)?.let {
+            out.add(looseCaseRef(it.groupValues[1], it.groupValues[2]))
+        }
+        return out
+    }
+
+    /** A table cell that wraps across lines (a C.M.'s "childNo" / "in" / "parentNo"
+     *  cross-reference) can arrive as separate physical lines from a page-to-text
+     *  copy or a WebView's innerText. A line that is *only* the word "in" is never
+     *  real case text on its own, so it's stitched back onto its neighbours to
+     *  restore the original "in" phrase before anything else runs. */
+    fun mergeSplitCmLines(rows: List<String>): List<String> {
+        if (rows.none { it.trim().equals("in", ignoreCase = true) }) return rows
+        val out = ArrayList<String>(rows.size)
+        var i = 0
+        while (i < rows.size) {
+            val r = rows[i]
+            if (r.trim().equals("in", ignoreCase = true) && out.isNotEmpty() && i + 1 < rows.size) {
+                out[out.size - 1] = out.last() + " in " + rows[i + 1]
+                i += 2
+                continue
+            }
+            out.add(r)
+            i++
         }
         return out
     }

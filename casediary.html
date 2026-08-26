@@ -533,11 +533,15 @@ function findHits(row, probes){
 /* Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
    the same cause list as Principal Seat (Lahore) cases. Toggle in the Diary
    tab — on by default, since most practices here only run at Lahore. */
-/* Circuit-bench (Bahawalpur/Multan/Rawalpindi) rows print their case
-   number wrapped in square brackets, e.g. "[W.P.1234/26]" — Principal
-   Seat (Lahore) rows don't. That's a far more reliable signal than the
-   bench name showing up in the text, so it's checked first. */
-const BRACKETED_CASE_RE = /\[[^\[\]]{2,40}\/\d{2,4}\]/;
+/* Circuit-bench (Bahawalpur/Multan/Rawalpindi) rows print their case number
+   wrapped in square brackets, HYPHEN-delimited — "[6458-B-26]" or
+   "[10060-26]" — confirmed against a real LHC export; Principal Seat
+   (Lahore) rows never use brackets. That's a far more reliable signal than
+   the bench name showing up in the text, so it's checked first. Also used
+   for own/parent case-ref extraction — see BRACKET_CORE below. */
+const BRACKET_CORE = "\\[(\\d{2,7})(?:-[A-Za-z]{1,4})?-(\\d{2,4})\\]";
+const BRACKET_CORE_NC = "\\[\\d{2,7}(?:-[A-Za-z]{1,4})?-\\d{2,4}\\]";
+const BRACKETED_CASE_RE = new RegExp(BRACKET_CORE);
 function isOtherBench(row){
   if(BRACKETED_CASE_RE.test(row)) return true;
   return /\b(bahawalpur|multan|rawalpindi)\b/i.test(row);
@@ -551,22 +555,46 @@ function isOtherBench(row){
    never turns up on its own, at most one C.M. line for it is kept, standing
    in for the whole group.
 
-   The court prints the parent case two different ways: sometimes spelled
-   out ("C.M.No.11/2026 in W.P.No.4001/2026"), sometimes folded straight
-   into the C.M.'s own number as a third segment ("C.M.No.11/4001/2026" —
-   application-no / main-case-no / year, no "in" at all). Both are handled. */
+   Confirmed against a real LHC "Urgent Cause List" export, the court prints
+   a C.M./application's parent case three different ways depending on bench:
+   - Lahore Principal Seat main rows print a BARE "number/year" with no case-
+     type text next to it at all (the type lives in a separate "category"
+     column) — e.g. Case# "48064/26" for the main case, and its C.M. as a
+     third segment folded into the C.M.'s own number, "CM/1/48064/26"
+     (application-no/main-no/year, no "in" at all). The C.M. row is also
+     prefixed by a repeated "and"/category before "CM" ever appears, so
+     detecting it must not require "CM" to be at the very start of the row.
+   - Circuit-bench rows (Multan/Bahawalpur/Rawalpindi) use bracketed,
+     HYPHEN-delimited numbers instead of slashes — "[6458-B-26]" or
+     "[10060-26]" — and spell the parent out as "[childNo] in [parentNo]".
+     A page-to-text copy (or a WebView's innerText) can split that "in"
+     across its own line when the table cell itself wraps, so the row list
+     is re-joined (see mergeSplitCmLines) before any of this runs. */
 const CASE_TYPE_ALT =
   "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
   "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?";
 const CM_DESIGNATION = "(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)";
+/* The gap between the designation and its number varies: "C.M.No.11/2026"
+   (word "No." then number), but the real, confirmed Lahore form is simply
+   "CM/1/48064/26" — no "No.", the designation is followed immediately by a
+   slash. This gap allows either. Not anchored to the start of the row either:
+   real rows prefix the C.M.'s own entry with a repeated "and"/category
+   before the "CM" text ever appears. */
+const CM_GAP = "\\s*/?\\s*(?:No\\.?)?\\s*/?\\s*";
 const CM_LEAD_RE = new RegExp(
-  "^\\s*(?:\\d+\\s*[|.]?\\s*)?" + CM_DESIGNATION + "\\s*(?:No\\.?)?\\s*\\d+(?:\\s*/\\s*\\d+){1,2}\\b", "i"
+  "\\b" + CM_DESIGNATION + CM_GAP + "\\d+(?:\\s*/\\s*\\d+){1,2}\\b", "i"
 );
 const OWN_REF_RE = new RegExp("\\b(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
 const CM_PARENT_RE = new RegExp("\\bin\\s+(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
 const CM_EMBEDDED_PARENT_RE = new RegExp(
-  CM_DESIGNATION + "\\s*(?:No\\.?)?\\s*\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i"
+  CM_DESIGNATION + CM_GAP + "\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i"
 );
+/* Lahore main-case rows with no case-type text next to the number at all —
+   the fallback once OWN_REF_RE (which requires a type word) comes up empty. */
+const BARE_CASE_NO_RE = /\b(\d{2,7})\s*\/\s*(\d{2,4})\b/;
+/* A circuit-bench C.M./sub-application spells its parent out as
+   "[childNo] in [parentNo]" instead of folding it into its own number. */
+const BRACKET_CM_RE = new RegExp(BRACKET_CORE_NC + "\\s*in\\s*" + BRACKET_CORE, "i");
 
 function canonicalCaseRef(m){
   const type = m[1].replace(/[^a-z]/gi, "").toUpperCase();
@@ -574,18 +602,24 @@ function canonicalCaseRef(m){
   const yr = m[3].length === 2 ? "20" + m[3] : m[3];
   return type + ":" + no + ":" + yr;
 }
-/* Type-agnostic identity: used when the parent's own case-type text isn't
-   printed (the embedded C.M.No.<app>/<main>/<year> form), so a plain
+/* Type-agnostic identity: used whenever the parent's own case-type text
+   isn't printed (the embedded C.M.No.<app>/<main>/<year> form, a bare
+   Lahore number/year, or a circuit-bench bracketed number), so a plain
    number+year is the only thing to match on. */
 function looseCaseRef(no, yr){
   const n = no.replace(/^0+(?=\d)/, "");
   const y = yr.length === 2 ? "20" + yr : yr;
   return "*:" + n + ":" + y;
 }
-function isCmRow(row){ return CM_LEAD_RE.test(row); }
+function isCmRow(row){ return CM_LEAD_RE.test(row) || BRACKET_CM_RE.test(row); }
 function ownCaseRefs(row){
   const m = row.match(OWN_REF_RE);
-  return m ? [canonicalCaseRef(m), looseCaseRef(m[2], m[3])] : [];
+  if(m) return [canonicalCaseRef(m), looseCaseRef(m[2], m[3])];
+  const bare = row.match(BARE_CASE_NO_RE);
+  if(bare) return [looseCaseRef(bare[1], bare[2])];
+  const br = row.match(BRACKETED_CASE_RE);
+  if(br) return [looseCaseRef(br[1], br[2])];
+  return [];
 }
 function cmParentRefs(row){
   const out = [];
@@ -593,6 +627,26 @@ function cmParentRefs(row){
   if(m1) out.push(canonicalCaseRef(m1), looseCaseRef(m1[2], m1[3]));
   const m2 = row.match(CM_EMBEDDED_PARENT_RE);
   if(m2) out.push(looseCaseRef(m2[1], m2[2]));
+  const m3 = row.match(BRACKET_CM_RE);
+  if(m3) out.push(looseCaseRef(m3[1], m3[2]));
+  return out;
+}
+/* A table cell that wraps across lines (a C.M.'s "childNo" / "in" / "parentNo"
+   cross-reference) can arrive as separate physical lines from a page-to-text
+   copy or a WebView's innerText. A line that is *only* the word "in" is never
+   real case text on its own, so it's stitched back onto its neighbours to
+   restore the original "in" phrase before anything else runs. */
+function mergeSplitCmLines(rows){
+  const out = [];
+  for(let i = 0; i < rows.length; i++){
+    const r = rows[i];
+    if(r.trim().toLowerCase() === "in" && out.length && i + 1 < rows.length){
+      out[out.length - 1] = out[out.length - 1] + " in " + rows[i + 1];
+      i++;
+      continue;
+    }
+    out.push(r);
+  }
   return out;
 }
 
@@ -1286,7 +1340,7 @@ function scanPaste(){
   const activePendingCount = S.settings.pendingFilesEnabled === false ? 0 : S.pending.length;
   const principalSeatOnly = S.settings.principalSeatOnly !== false;
 
-  let rows = text.split("\n").map(r=>r.trim()).filter(r=>r.length >= 8);
+  let rows = mergeSplitCmLines(text.split("\n").map(r=>r.trim())).filter(r=>r.length >= 8);
   let skippedBench = 0;
   if(principalSeatOnly){
     const kept = rows.filter(r => !isOtherBench(r));

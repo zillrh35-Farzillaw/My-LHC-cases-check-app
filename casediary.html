@@ -206,6 +206,16 @@
       </div>
       <label>Case title</label>
       <input id="newPending" placeholder="e.g. Ghazanfar Ali Khan vs NADRA etc." autocomplete="off">
+      <div class="note" style="margin-top:8px">
+        Case number (optional) — add it once the file has been registered, even
+        before it's fixed. Matching then also catches the exact case number,
+        alongside the usual fuzzy name match.
+      </div>
+      <div class="row">
+        <div><label>Type</label><input id="newPendingType" placeholder="W.P."></div>
+        <div><label>Number</label><input id="newPendingNo" placeholder="12345"></div>
+        <div><label>Year</label><input id="newPendingYear" placeholder="2026" inputmode="numeric"></div>
+      </div>
       <label>Note (optional)</label>
       <input id="newPendingNote" placeholder="e.g. important, might fix in future" autocomplete="off">
       <button class="btn2" style="width:100%;margin-top:10px" onclick="addPending()">Add pending file</button>
@@ -241,6 +251,27 @@
       </label>
       <button class="btn2" style="width:100%;margin-top:10px" onclick="addKey()">Add keyword</button>
     </div>
+  </section>
+
+  <!-- ============================ TASKS ============================ -->
+  <section id="tab-tasks" class="hidden">
+    <div id="taskAlerts"></div>
+    <div class="card">
+      <b style="font-size:14px">Add a task</b>
+      <div class="note">
+        Something a senior or officer told you to do, with a deadline — so it never
+        slips through. You'll see an overdue/due-soon warning here whenever you open
+        the app; the Android app can also alert you at the deadline even if it's closed.
+      </div>
+      <label>What needs to be done</label>
+      <textarea id="newTaskTitle" placeholder="e.g. File reply to show-cause notice"></textarea>
+      <label>Assigned by (optional)</label>
+      <input id="newTaskAssignedBy" placeholder="e.g. Senior Advocate / District Officer" autocomplete="off">
+      <label>Deadline</label>
+      <input type="datetime-local" id="newTaskDeadline">
+      <button class="btn2" style="width:100%;margin-top:10px" onclick="addTask()">Add task</button>
+    </div>
+    <div id="taskList"></div>
   </section>
 
   <!-- ============================ BACKUP =========================== -->
@@ -279,6 +310,7 @@
   <button data-t="diary"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V9h14v10zM7 11h5v5H7z"/></svg>Diary</button>
   <button data-t="pending"><svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/></svg>Pending</button>
   <button data-t="keys"><svg viewBox="0 0 24 24"><path d="M12.65 10A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H17v4h4v-4h2v-4H12.65zM7 14a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>Keywords</button>
+  <button data-t="tasks"><svg viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-2 14-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z"/></svg>Tasks</button>
   <button data-t="backup"><svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>Backup</button>
 </nav>
 
@@ -290,7 +322,7 @@
 
 /* ------------------------------------------------------------------ store */
 const KEY = "casediary.v1";
-const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [],
+const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [], tasks: [],
   settings: { principalSeatOnly: true, pendingFilesEnabled: true }, seq: 1 };
 
 function load(){
@@ -493,6 +525,16 @@ function compile(keys, cases, pending){
     if(!mustMatch.length) mustMatch = [t[0]]; // every word is common — anchor on the first anyway
     probes.push({label:pf.title, kind:"PENDING", caseId:0, pendingId:pf.id, tokens:t,
       key:"pending:"+pf.id, fuzzy:true, mustMatch});
+    // Once a pending file's case number is known (registered but not yet
+    // fixed), match it exactly too — precise, alongside the fuzzy title match.
+    if(pf.caseNo && pf.caseYear){
+      const numToks = usableTokens(pf.caseNo + " " + pf.caseYear);
+      if(numToks){
+        const ref = [pf.caseType, pf.caseNo].filter(Boolean).join(" ").trim() + "/" + pf.caseYear;
+        probes.push({label:ref, kind:"CASE", caseId:0, pendingId:pf.id, tokens:numToks,
+          key:"pendingcase:"+pf.id, fuzzy:false});
+      }
+    }
   }
   return probes;
 }
@@ -620,11 +662,20 @@ function toInput(ms){ if(!ms) return ""; const d=new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function fromInput(v){ if(!v) return 0; const [y,m,d]=v.split("-").map(Number);
   return new Date(y, m-1, d, 10, 0, 0, 0).getTime(); }
+function fromDateTimeInput(v){
+  if(!v) return 0;
+  const [datePart, timePart] = v.split("T");
+  const [y,m,d] = datePart.split("-").map(Number);
+  const [hh,mm] = (timePart||"09:00").split(":").map(Number);
+  return new Date(y, m-1, d, hh||0, mm||0, 0, 0).getTime();
+}
+function fmtDateTime(ms){ if(!ms) return "—"; const d=new Date(ms);
+  return fmtDay(ms) + ", " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); }
 
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
-const TABS = ["cases","diary","pending","keys","backup"];
-const TAB_TITLES = {cases:"Causelist Sentinel", diary:"Diary", pending:"Pending Files", keys:"Keywords", backup:"Backup"};
+const TABS = ["cases","diary","pending","keys","tasks","backup"];
+const TAB_TITLES = {cases:"Causelist Sentinel", diary:"Diary", pending:"Pending Files", keys:"Keywords", tasks:"Tasks", backup:"Backup"};
 function switchTab(name){
   tab = name;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));
@@ -658,6 +709,7 @@ function render(){
   if(tab === "diary")   renderDiary();
   if(tab === "pending") renderPending();
   if(tab === "keys")    renderKeys();
+  if(tab === "tasks")   renderTasks();
   document.getElementById("hSub").textContent =
     S.cases.filter(c=>c.status==="ACTIVE").length + " active cases · offline";
 }
@@ -869,7 +921,9 @@ function renderPending(){
       on above to resume matching these against scanned cause lists.</div>`) +
     list.map(p=>{
       const matches = S.hits.filter(h=>h.pendingId===p.id);
+      const ref = [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear ? "/"+p.caseYear : "");
       return `<div class="card">
+        ${ref.trim() ? `<div class="ref">${esc(ref.trim())}</div>` : ""}
         <div class="ttl" style="font-weight:700">${esc(p.title)}</div>
         ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ""}
         <div class="meta">Added ${esc(fmt(p.addedAt))}</div>
@@ -884,10 +938,14 @@ function renderPending(){
 function addPending(){
   const t = document.getElementById("newPending");
   const n = document.getElementById("newPendingNote");
+  const ty = document.getElementById("newPendingType");
+  const no = document.getElementById("newPendingNo");
+  const yr = document.getElementById("newPendingYear");
   const title = t.value.trim();
   if(title.length < 5){ alert("Enter the case title — at least a few words."); return; }
-  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now()});
-  t.value = ""; n.value = "";
+  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now(),
+    caseType:ty.value.trim(), caseNo:no.value.trim(), caseYear:yr.value.trim()});
+  t.value = ""; n.value = ""; ty.value = ""; no.value = ""; yr.value = "";
   save(); render();
 }
 function removePending(id){
@@ -896,6 +954,103 @@ function removePending(id){
   S.hits = S.hits.filter(h=>h.pendingId!==id);
   save(); render();
 }
+
+/* --------------------------------------------------------------- tasks */
+/* Things a senior/officer told the lawyer to do, each with a deadline.
+   The web app can only warn while it happens to be open (no background
+   process is possible for a plain local page) — the Android app schedules
+   a real alarm-style alert for the deadline itself, even if it's closed. */
+function addTask(){
+  const t = document.getElementById("newTaskTitle");
+  const by = document.getElementById("newTaskAssignedBy");
+  const dl = document.getElementById("newTaskDeadline");
+  const title = t.value.trim();
+  if(title.length < 3){ alert("Describe the task — at least a few words."); return; }
+  const deadline = fromDateTimeInput(dl.value);
+  S.tasks.push({id:nextId(), title, assignedBy:by.value.trim(), deadline, done:false,
+    createdAt:Date.now(), alertedAt:0});
+  t.value = ""; by.value = ""; dl.value = "";
+  save(); render();
+}
+function toggleTaskDone(id){
+  const task = S.tasks.find(x=>x.id===id);
+  if(task){ task.done = !task.done; task.doneAt = task.done ? Date.now() : 0; save(); render(); }
+}
+function removeTask(id){
+  if(!confirm("Remove this task?")) return;
+  S.tasks = S.tasks.filter(x=>x.id!==id);
+  save(); render();
+}
+function taskStatus(task){
+  if(task.done) return "done";
+  if(!task.deadline) return "open";
+  const now = Date.now();
+  if(task.deadline < now) return "overdue";
+  if(task.deadline - now <= 2*86400000) return "soon";
+  return "open";
+}
+function renderTasks(){
+  const open = S.tasks.filter(t=>!t.done)
+    .sort((a,b)=>(a.deadline||Infinity)-(b.deadline||Infinity));
+  const done = S.tasks.filter(t=>t.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+
+  const overdue = open.filter(t=>taskStatus(t)==="overdue");
+  const soon = open.filter(t=>taskStatus(t)==="soon");
+  const alertsEl = document.getElementById("taskAlerts");
+  alertsEl.innerHTML = overdue.length
+    ? `<div class="warnbox"><b>${overdue.length} task${overdue.length===1?"":"s"} overdue</b> — deadline has already passed. Do these first.</div>`
+    : (soon.length ? `<div class="okbox">${soon.length} task${soon.length===1?"":"s"} due within 2 days.</div>` : "");
+  notifyOverdueTasks(overdue);
+
+  const statusPill = t => {
+    const s = taskStatus(t);
+    if(s==="overdue") return `<span class="pill warn" style="margin-top:0">Overdue</span>`;
+    if(s==="soon")    return `<span class="pill warn" style="margin-top:0">Due soon</span>`;
+    if(s==="open" && t.deadline) return `<span class="pill" style="margin-top:0">${esc(relLabel(t.deadline))}</span>`;
+    return "";
+  };
+  const taskCard = t => `<div class="card">
+      <div style="display:flex;gap:8px;align-items:center">
+        ${statusPill(t)}
+        ${t.assignedBy ? `<span class="pill" style="margin-top:0">From: ${esc(t.assignedBy)}</span>` : ""}
+        <span style="flex:1"></span>
+        ${t.deadline ? `<span style="font-size:11px;color:var(--muted)">${esc(fmtDateTime(t.deadline))}</span>` : ""}
+      </div>
+      <div class="ttl" style="font-weight:700;margin-top:8px;${t.done?"text-decoration:line-through;opacity:.6":""}">${esc(t.title)}</div>
+      <div class="row" style="margin-top:10px">
+        <button class="${t.done?"btn3":"btn"}" onclick="toggleTaskDone(${t.id})">${t.done?"Mark not done":"✓ Mark complete"}</button>
+        <button class="btnDanger" onclick="removeTask(${t.id})">Remove</button>
+      </div>
+    </div>`;
+
+  let html = "";
+  if(open.length){
+    html += `<h2>Open tasks<span class="n">${open.length}</span></h2>` + open.map(taskCard).join("");
+  }
+  if(done.length){
+    html += `<h2>Completed<span class="n">${done.length}</span></h2>` + done.map(taskCard).join("");
+  }
+  if(!S.tasks.length){
+    html = `<div class="empty">No tasks yet.<br>Add one above whenever a senior or officer tells you to do something with a deadline.</div>`;
+  }
+  document.getElementById("taskList").innerHTML = html;
+}
+/* Best-effort only: fires a browser notification for a newly-overdue task,
+   but only while this page happens to be open — a plain local web page
+   cannot wake up in the background the way the Android app can. */
+function notifyOverdueTasks(overdue){
+  if(!("Notification" in window) || Notification.permission !== "granted") return;
+  for(const t of overdue){
+    if(t.alertedAt) continue;
+    new Notification("Task overdue", {body:t.title});
+    t.alertedAt = Date.now();
+  }
+  if(overdue.some(t=>t.alertedAt)) save();
+}
+if("Notification" in window && Notification.permission === "default"){
+  document.addEventListener("click", () => Notification.requestPermission(), {once:true});
+}
+setInterval(() => { if(tab === "tasks") renderTasks(); }, 60000);
 
 /* ------------------------------------------------- save to My Cases / fixed */
 /* "My Cases directory" IS the exportable Fixed-cases report (S.fixed) — every
@@ -907,7 +1062,9 @@ function openSaveDialog(hash){
   if(!h) return;
   const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
   const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
-  const defaultTitle = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
+  const pendingRef = p && p.caseNo ? [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear?"/"+p.caseYear:"") : "";
+  const defaultTitle = p ? (pendingRef ? pendingRef + " " + p.title : p.title)
+    : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
   openModal(`<h3>Save to My Cases</h3>
     <div class="hit">${esc(h.raw)}</div>
     <label>Title &amp; No. of the case</label>
@@ -928,16 +1085,48 @@ function openSaveDialog(hash){
 /* A folded-in C.M./application line is part of this same case's record,
    so it travels along into the exportable Fixed-cases report too. */
 function fullRaw(h){ return [h.raw, ...(h.related||[])].join("\n"); }
+/* Approving a scan result should also populate the Cases tab — not just the
+   exportable Fixed-cases report — so a case spotted by scanning becomes a
+   fully trackable Case (hearings, fees, notes, future watching) without ever
+   typing a case number in by hand. Only acts when a case number can be
+   parsed out of the confirmed title; otherwise the Fixed-cases entry is
+   still saved exactly as before, just without a Case link. */
+function resolveCaseFromApproval(titleNo, court, existingCaseId){
+  if(existingCaseId) return existingCaseId;
+  const m = titleNo.match(OWN_REF_RE);
+  if(!m) return 0;
+  const caseType = m[1].trim();
+  const caseNo = m[2];
+  const caseYear = m[3].length===2 ? "20"+m[3] : m[3];
+  let c = S.cases.find(x=>x.caseNo===caseNo && x.caseYear===caseYear);
+  if(c){
+    if(!c.court && court) c.court = court;
+    c.updatedAt = Date.now();
+    return c.id;
+  }
+  const vsMatch = titleNo.match(/^(.*?)\bvs\.?\b(.*)$/i);
+  const petitioner = vsMatch ? vsMatch[1].replace(OWN_REF_RE, "").trim() : "";
+  const respondent = vsMatch ? vsMatch[2].replace(/etc\.?\s*$/i, "").trim() : "";
+  c = {
+    id: nextId(), caseType, caseNo, caseYear, petitioner, respondent,
+    clientName:"", clientPhone:"", court: court||"", judge:"", stage:"",
+    nextDate:0, status:"ACTIVE", feeTotal:0, feeReceived:0, notes:"",
+    hearings:[], watched:true, createdAt:Date.now(), updatedAt:Date.now()
+  };
+  S.cases.push(c);
+  return c.id;
+}
 function saveHitToCases(hash){
   const h = S.hits.find(x=>x.hash===hash);
   if(!h) return;
   const g = id => (document.getElementById(id)?.value || "").trim();
   const titleNo = g("apTitle");
   if(!titleNo){ alert("Add the case title."); return; }
+  const caseId = resolveCaseFromApproval(titleNo, g("apCourt"), h.caseId || 0);
   S.fixed.unshift({
     id: nextId(), titleNo, court: g("apCourt"), prayer: g("apPrayer"),
     proceedings: g("apProceedings"), causelistNo: g("apCauselist"),
-    fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId: h.caseId || 0
+    fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId
   });
   if(h.pendingId) S.pending = S.pending.filter(p=>p.id!==h.pendingId);
   S.hits = S.hits.filter(x=>x.hash!==hash);
@@ -953,10 +1142,13 @@ function saveSelectedHits(){
     if(!h) continue;
     const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
     const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
-    const titleNo = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
+    const pendingRef = p && p.caseNo ? [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear?"/"+p.caseYear:"") : "";
+    const titleNo = p ? (pendingRef ? pendingRef + " " + p.title : p.title)
+      : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
+    const caseId = resolveCaseFromApproval(titleNo, "", h.caseId || 0);
     S.fixed.unshift({
       id: nextId(), titleNo, court:"", prayer:"", proceedings:"", causelistNo:"",
-      fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId: h.caseId || 0
+      fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId
     });
     if(h.pendingId) S.pending = S.pending.filter(x=>x.id!==h.pendingId);
   }
@@ -1524,7 +1716,8 @@ Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,
   addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc,
   switchTab,addPending,removePending,togglePendingSection,openSaveDialog,saveHitToCases,saveSelectedHits,
   toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,toggleFixedSelect,editFixed,updateFixed,dismissPendingHit,
-  removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly});
+  removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly,
+  addTask,toggleTaskDone,removeTask});
 
 render();
 </script>

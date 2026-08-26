@@ -69,6 +69,7 @@ class Db private constructor(context: Context) :
                 list_date TEXT NOT NULL DEFAULT '',
                 raw TEXT NOT NULL DEFAULT '',
                 terms_json TEXT NOT NULL DEFAULT '[]',
+                related_json TEXT NOT NULL DEFAULT '[]',
                 found_at INTEGER NOT NULL DEFAULT 0,
                 seen INTEGER NOT NULL DEFAULT 0
             )
@@ -207,6 +208,11 @@ class Db private constructor(context: Context) :
                 db.execSQL("ALTER TABLE fixtures ADD COLUMN terms_json TEXT NOT NULL DEFAULT ''")
             } catch (_: Exception) { /* already present */ }
             migrateFixtureTerms(db)
+        }
+        if (oldVersion < 6) {
+            try {
+                db.execSQL("ALTER TABLE fixtures ADD COLUMN related_json TEXT NOT NULL DEFAULT '[]'")
+            } catch (_: Exception) { /* already present */ }
         }
         createIndexes(db)
     }
@@ -591,8 +597,9 @@ class Db private constructor(context: Context) :
      */
     fun insertFixtureIfNew(f: Fixture): Boolean {
         val db = writableDatabase
-        val existingId = db.rawQuery("SELECT id, terms_json FROM fixtures WHERE hash=?", arrayOf(f.hash))
-            .use { cur -> if (cur.moveToFirst()) cur.getLong(0) to cur.getString(1) else null }
+        val existingId = db.rawQuery(
+            "SELECT id, terms_json, related_json FROM fixtures WHERE hash=?", arrayOf(f.hash)
+        ).use { cur -> if (cur.moveToFirst()) Triple(cur.getLong(0), cur.getString(1), cur.getString(2)) else null }
 
         if (existingId == null) {
             val cv = ContentValues().apply {
@@ -604,13 +611,14 @@ class Db private constructor(context: Context) :
                 put("list_date", f.listDate)
                 put("raw", f.raw)
                 put("terms_json", termsToJson(f.terms))
+                put("related_json", stringsToJson(f.relatedRaw))
                 put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
                 put("seen", if (f.seen) 1 else 0)
             }
             return db.insertWithOnConflict("fixtures", null, cv, SQLiteDatabase.CONFLICT_IGNORE) != -1L
         }
 
-        val (id, existingTermsJson) = existingId
+        val (id, existingTermsJson, existingRelatedJson) = existingId
         val existingTerms = jsonToTerms(existingTermsJson).toMutableList()
         var added = false
         for (t in f.terms) {
@@ -619,10 +627,18 @@ class Db private constructor(context: Context) :
                 added = true
             }
         }
+        val existingRelated = jsonToStrings(existingRelatedJson).toMutableList()
+        for (r in f.relatedRaw) {
+            if (r !in existingRelated) {
+                existingRelated.add(r)
+                added = true
+            }
+        }
         if (!added && f.caseId == 0L && f.pendingId == 0L) return false
 
         val cv = ContentValues().apply {
             put("terms_json", termsToJson(existingTerms))
+            put("related_json", stringsToJson(existingRelated))
             if (f.caseId != 0L) put("case_id", f.caseId)
             if (f.pendingId != 0L) put("pending_id", f.pendingId)
             if (added) put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
@@ -650,12 +666,29 @@ class Db private constructor(context: Context) :
         }
     }
 
+    private fun stringsToJson(items: List<String>): String {
+        val arr = org.json.JSONArray()
+        for (s in items) arr.put(s)
+        return arr.toString()
+    }
+
+    private fun jsonToStrings(json: String?): List<String> {
+        if (json.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     fun listFixtures(limit: Int = 300): List<Fixture> {
         val out = ArrayList<Fixture>()
         readableDatabase.query(
             "fixtures", null, null, null, null, null, "found_at DESC, id DESC", limit.toString()
         ).use { cur ->
             while (cur.moveToNext()) {
+                val relatedIdx = cur.getColumnIndex("related_json")
                 out.add(
                     Fixture(
                         id = cur.getLong(cur.getColumnIndexOrThrow("id")),
@@ -667,6 +700,7 @@ class Db private constructor(context: Context) :
                         listDate = cur.getString(cur.getColumnIndexOrThrow("list_date")),
                         raw = cur.getString(cur.getColumnIndexOrThrow("raw")),
                         terms = jsonToTerms(cur.getString(cur.getColumnIndexOrThrow("terms_json"))),
+                        relatedRaw = if (relatedIdx < 0) emptyList() else jsonToStrings(cur.getString(relatedIdx)),
                         foundAt = cur.getLong(cur.getColumnIndexOrThrow("found_at")),
                         seen = cur.getInt(cur.getColumnIndexOrThrow("seen")) == 1
                     )
@@ -932,7 +966,7 @@ class Db private constructor(context: Context) :
 
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 5
+        private const val VERSION = 6
 
         @Volatile
         private var instance: Db? = null

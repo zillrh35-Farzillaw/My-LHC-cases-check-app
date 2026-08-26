@@ -213,14 +213,21 @@ object Matcher {
         findHits(row, compile(terms, cases))
 
     private val OTHER_BENCH = Regex("\\b(bahawalpur|multan|rawalpindi)\\b", RegexOption.IGNORE_CASE)
+    private val BRACKETED_CASE_RE = Regex("\\[[^\\[\\]]{2,40}/\\d{2,4}\\]")
 
     /**
      * Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
      * the same cause list as Principal Seat (Lahore) cases. Callers can skip
      * them via [pk.advocate.casediary.util.Prefs.principalSeatOnly] — on by
      * default, since most practices here only run at Lahore.
+     *
+     * Circuit-bench rows print their case number wrapped in square brackets,
+     * e.g. "[W.P.1234/26]" — Principal Seat (Lahore) rows don't. That's a far
+     * more reliable signal than the bench name showing up in the text, so
+     * it's checked first.
      */
-    fun isOtherBench(row: String): Boolean = OTHER_BENCH.containsMatchIn(row)
+    fun isOtherBench(row: String): Boolean =
+        BRACKETED_CASE_RE.containsMatchIn(row) || OTHER_BENCH.containsMatchIn(row)
 
     /**
      * A C.M./C.M.A./Crl.M.A. row is a miscellaneous application filed IN a

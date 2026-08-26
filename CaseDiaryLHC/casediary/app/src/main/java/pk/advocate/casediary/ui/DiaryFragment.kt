@@ -139,7 +139,7 @@ class DiaryFragment : Fragment() {
                         fixtureId = f.id,
                         pendingId = f.pendingId,
                         headline = pendingTitle ?: f.termsLabel().ifBlank { "Pending file match" },
-                        detail = f.raw,
+                        detail = f.detailText(),
                         whenText = Dates.fmtStamp(f.foundAt)
                     )
                 )
@@ -150,7 +150,7 @@ class DiaryFragment : Fragment() {
                 badge = f.sourceLabel.ifBlank { "Cause list" },
                 whenText = Dates.fmtStamp(f.foundAt),
                 headline = f.termsLabel().ifBlank { "Match" },
-                detail = f.raw,
+                detail = f.detailText(),
                 listDate = f.listDate,
                 url = f.sourceUrl,
                 kind = f.kinds().joinToString(", ") { kindLabel(it) },
@@ -368,7 +368,7 @@ class DiaryFragment : Fragment() {
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Save to My Cases")
-            .setMessage(f.raw)
+            .setMessage(f.detailText())
             .setView(container)
             .setPositiveButton("Save") { _, _ ->
                 val titleNo = titleInput.text?.toString()?.trim().orEmpty()
@@ -383,7 +383,7 @@ class DiaryFragment : Fragment() {
                         prayer = prayerInput.text?.toString()?.trim().orEmpty(),
                         proceedings = proceedingsInput.text?.toString()?.trim().orEmpty(),
                         causelistNo = causelistInput.text?.toString()?.trim().orEmpty(),
-                        sourceRaw = f.raw,
+                        sourceRaw = f.fullRaw(),
                         caseId = f.caseId
                     )
                 )
@@ -407,7 +407,7 @@ class DiaryFragment : Fragment() {
             val titleNo = pending?.title
                 ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
                 ?: f.termsLabel()
-            db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.raw, caseId = f.caseId))
+            db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.fullRaw(), caseId = f.caseId))
             if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
             db.deleteFixture(f.id)
         }

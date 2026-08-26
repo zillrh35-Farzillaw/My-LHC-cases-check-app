@@ -220,6 +220,15 @@ class MatcherTest {
         assertFalse(Matcher.isOtherBench("4 | W.P. 8/2026 | Lahore principal seat matter"))
     }
 
+    @Test
+    fun `a case number wrapped in square brackets marks a circuit-bench row`() {
+        // Circuit-bench rows print their case number in brackets even when
+        // the bench name itself isn't spelled out anywhere in the row.
+        assertTrue(Matcher.isOtherBench("1 | [ABC/26] SOME BOLD CAPS TITLE VS ANOTHER PARTY"))
+        assertTrue(Matcher.isOtherBench("2 | [W.P.1234/26] Someone Vs State"))
+        assertFalse(Matcher.isOtherBench("3 | W.P. 8/2026 Someone vs State, no brackets at all"))
+    }
+
     // ------------------------------------------------------- C.M./application consolidation
 
     @Test

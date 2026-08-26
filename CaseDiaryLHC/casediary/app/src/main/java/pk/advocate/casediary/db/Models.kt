@@ -70,7 +70,10 @@ data class TermHit(val term: String, val kind: String)
  *
  * One row is one [Fixture], even when several keywords, a saved case number
  * and a pending file all match the same line — every term that matched is
- * kept in [terms] instead of duplicating the row per keyword.
+ * kept in [terms] instead of duplicating the row per keyword. A C.M./
+ * application row belonging to this same case (see
+ * [pk.advocate.casediary.work.CauseListScraper]) is folded in as
+ * [relatedRaw] rather than shown as a separate result.
  */
 data class Fixture(
     var id: Long = 0,
@@ -82,6 +85,7 @@ data class Fixture(
     var listDate: String = "",      // whatever date text was detected on the page
     var raw: String = "",
     var terms: List<TermHit> = emptyList(),
+    var relatedRaw: List<String> = emptyList(),
     var foundAt: Long = 0L,
     var seen: Boolean = false
 ) {
@@ -96,6 +100,17 @@ data class Fixture(
 
     /** Distinct kind labels across every matched term, for display. */
     fun kinds(): List<String> = terms.map { it.kind }.distinct()
+
+    /** [raw] plus any folded-in C.M./application lines, laid out as one block for display. */
+    fun detailText(): String {
+        if (relatedRaw.isEmpty()) return raw
+        val count = relatedRaw.size
+        val block = relatedRaw.joinToString("\n") { "  • $it" }
+        return "$raw\n\n+ $count related C.M./application line${if (count == 1) "" else "s"} in this case:\n$block"
+    }
+
+    /** [raw] plus related lines, joined for anything that needs the plain combined text (e.g. exports). */
+    fun fullRaw(): String = (listOf(raw) + relatedRaw).joinToString("\n")
 }
 
 /** A keyword the scraper looks for in cause list rows. */

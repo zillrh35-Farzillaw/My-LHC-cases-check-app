@@ -525,7 +525,13 @@ function findHits(row, probes){
 /* Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
    the same cause list as Principal Seat (Lahore) cases. Toggle in the Diary
    tab — on by default, since most practices here only run at Lahore. */
+/* Circuit-bench (Bahawalpur/Multan/Rawalpindi) rows print their case
+   number wrapped in square brackets, e.g. "[W.P.1234/26]" — Principal
+   Seat (Lahore) rows don't. That's a far more reliable signal than the
+   bench name showing up in the text, so it's checked first. */
+const BRACKETED_CASE_RE = /\[[^\[\]]{2,40}\/\d{2,4}\]/;
 function isOtherBench(row){
+  if(BRACKETED_CASE_RE.test(row)) return true;
   return /\b(bahawalpur|multan|rawalpindi)\b/i.test(row);
 }
 
@@ -724,6 +730,17 @@ function renderDiary(){
   const checkbox = h => `<input type="checkbox" class="hitcheck" style="width:auto;flex:none"
       ${selectedHits.has(h.hash)?"checked":""} onclick="toggleHitSelect('${esc(h.hash)}')">`;
 
+  /* A C.M./application filed in this same case is folded into the same box
+     as its main case (or, if the main case itself never showed up, into one
+     shared box with any other C.M.s of that same case) — so it's obvious at
+     a glance that they're one matter, not several unrelated results. */
+  const relatedBlock = h => (h.related && h.related.length)
+    ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
+         <div class="meta" style="margin-top:0">+ ${h.related.length} related C.M./application line${h.related.length===1?"":"s"} in this case:</div>
+         ${h.related.map(r=>`<div class="hit" style="margin-top:6px">${esc(r)}</div>`).join("")}
+       </div>`
+    : "";
+
   const hitCard = h => `<div class="card">
       <div style="display:flex;gap:8px;align-items:center">
         ${checkbox(h)}
@@ -737,6 +754,7 @@ function renderDiary(){
       <div class="ttl click" style="font-weight:700;margin-top:8px" onclick="viewHit('${esc(h.hash)}')">${esc(hitTitle(h))}</div>
       <div class="meta">${esc(hitKinds(h))}</div>
       <div class="hit">${esc(h.raw)}</div>
+      ${relatedBlock(h)}
       <div class="row" style="margin-top:8px">
         <button class="btn2" onclick="openSaveDialog('${esc(h.hash)}')">Save to My Cases</button>
         <button class="btn3" onclick="removeHit('${esc(h.hash)}')">Remove</button>
@@ -773,6 +791,7 @@ function renderDiary(){
         </div>
         <div class="ttl" style="font-weight:700;margin-top:8px">${esc(p ? p.title : hitTitle(h))}</div>
         <div class="hit">${esc(h.raw)}</div>
+        ${relatedBlock(h)}
         <div class="row" style="margin-top:10px">
           <button class="btn" onclick="openSaveDialog('${esc(h.hash)}')">✓ Approve — save to My Cases</button>
           <button class="btn3" onclick="dismissPendingHit('${esc(h.hash)}')">Not a match</button>
@@ -906,6 +925,9 @@ function openSaveDialog(hash){
       <button class="btn3" onclick="closeModal()">Cancel</button>
     </div>`);
 }
+/* A folded-in C.M./application line is part of this same case's record,
+   so it travels along into the exportable Fixed-cases report too. */
+function fullRaw(h){ return [h.raw, ...(h.related||[])].join("\n"); }
 function saveHitToCases(hash){
   const h = S.hits.find(x=>x.hash===hash);
   if(!h) return;
@@ -915,7 +937,7 @@ function saveHitToCases(hash){
   S.fixed.unshift({
     id: nextId(), titleNo, court: g("apCourt"), prayer: g("apPrayer"),
     proceedings: g("apProceedings"), causelistNo: g("apCauselist"),
-    fixedDate: Date.now(), sourceRaw: h.raw, caseId: h.caseId || 0
+    fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId: h.caseId || 0
   });
   if(h.pendingId) S.pending = S.pending.filter(p=>p.id!==h.pendingId);
   S.hits = S.hits.filter(x=>x.hash!==hash);
@@ -934,7 +956,7 @@ function saveSelectedHits(){
     const titleNo = p ? p.title : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
     S.fixed.unshift({
       id: nextId(), titleNo, court:"", prayer:"", proceedings:"", causelistNo:"",
-      fixedDate: Date.now(), sourceRaw: h.raw, caseId: h.caseId || 0
+      fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId: h.caseId || 0
     });
     if(h.pendingId) S.pending = S.pending.filter(x=>x.id!==h.pendingId);
   }
@@ -1115,57 +1137,82 @@ function scanPaste(){
   }
 
   const now = Date.now();
-  let freshRows = 0, matchedRows = 0, skippedCm = 0;
+  let freshRows = 0, matchedRows = 0, foldedCm = 0;
 
-  // First pass: find every matched row and work out which ones are bare main
-  // cases (so their C.M. applications can be dropped) versus C.M. rows that
-  // reference a main case by name.
-  const matched = [];
-  const mainCaseSeen = new Set();
+  // Pass 1: find every matched row and compute its own identity (hash) and,
+  // for C.M./application rows, which main case they belong to.
+  const entries = [];
   for(const row of rows){
     const hs = findHits(row, probes);
     if(!hs.length) continue;
     const cm = isCmRow(row);
     const parents = cm ? cmParentRefs(row) : [];
-    if(!cm){
-      for(const ref of ownCaseRefs(row)) mainCaseSeen.add(ref);
-    }
-    matched.push({row, hs, cm, parents});
+    const clipped = row.length > 400 ? row.slice(0,400) + "…" : row;
+    entries.push({row, hs, cm, parents, clipped, hash: hashOf(["paste", clipped])});
   }
 
-  const seenCmGroups = new Set();
-  for(const {row, hs, cm, parents} of matched){
-    if(cm && parents.length){
-      if(parents.some(p => mainCaseSeen.has(p))){ skippedCm++; continue; }  // main case also matched — drop the C.M.
-      const groupKey = parents[0];
-      if(seenCmGroups.has(groupKey)){ skippedCm++; continue; }             // already represented by another C.M. of the same case
-      seenCmGroups.add(groupKey);
+  // Pass 2: every bare main-case row this scan matched, indexed by its ref,
+  // so a C.M. filed in it can be found regardless of which order they were
+  // printed in (a C.M. is often printed right after its main case, but not
+  // always before it in the pasted text).
+  const mainCaseHashByRef = new Map();
+  for(const e of entries){
+    if(e.cm) continue;
+    for(const ref of ownCaseRefs(e.row)){
+      if(!mainCaseHashByRef.has(ref)) mainCaseHashByRef.set(ref, e.hash);
     }
-    matchedRows++;
+  }
 
-    // A row that is one of your own saved cases is categorised as "mine";
-    // otherwise a pending-file match needs approval; otherwise it's a plain
-    // keyword hit. Whichever category it lands in, EVERY term that matched —
-    // case number, party name, keyword, pending file — is merged into that
-    // one row's entry. A case must never be listed twice just because
-    // several keywords also matched the same line.
-    const mine = hs.find(h => h.caseId);
-    const pendingHit = !mine && hs.find(h => h.pendingId);
+  // Pass 3: work out which single "box" each row belongs to. A C.M. whose
+  // main case also matched joins that case's box; a C.M. whose main case
+  // did NOT turn up on its own still gets a box — the first such C.M.
+  // becomes that box, and any further C.M.s of the very same case join it —
+  // so the same case is never shown twice just because several of its
+  // applications matched.
+  const cmGroupHash = new Map();
+  for(const e of entries){
+    if(e.cm && e.parents.length){
+      const mainRef = e.parents.find(p => mainCaseHashByRef.has(p));
+      if(mainRef){ e.groupHash = mainCaseHashByRef.get(mainRef); continue; }
+      const key = e.parents[0];
+      if(!cmGroupHash.has(key)) cmGroupHash.set(key, e.hash);
+      e.groupHash = cmGroupHash.get(key);
+    } else {
+      e.groupHash = e.hash;
+    }
+  }
+
+  // Pass 4: fold every non-root row into its group's root entry as "related".
+  const roots = new Map();
+  for(const e of entries){
+    if(e.hash === e.groupHash) roots.set(e.hash, { entry:e, related:[] });
+  }
+  for(const e of entries){
+    if(e.hash === e.groupHash) continue;
+    const g = roots.get(e.groupHash);
+    if(g){ g.related.push(e); foldedCm++; }
+    else roots.set(e.hash, { entry:e, related:[] }); // safety net — never silently lose a row
+  }
+  matchedRows = roots.size;
+
+  for(const {entry, related} of roots.values()){
+    const allHs = [entry, ...related].flatMap(x => x.hs);
+    const mine = allHs.find(h => h.caseId);
+    const pendingHit = !mine && allHs.find(h => h.pendingId);
     const caseId = mine ? mine.caseId : 0;
     const pendingId = pendingHit ? pendingHit.pendingId : 0;
 
-    const clipped = row.length > 400 ? row.slice(0,400) + "…" : row;
-    const hash = hashOf(["paste", clipped]);
     const seenTerm = new Set();
     const terms = [];
-    for(const h of hs){
+    for(const h of allHs){
       const key = normalize(h.term);
       if(seenTerm.has(key)) continue;
       seenTerm.add(key);
       terms.push({term:h.term, kind:h.kind});
     }
+    const relatedRaw = related.map(r => r.clipped);
 
-    const existing = S.hits.find(x=>x.hash===hash);
+    const existing = S.hits.find(x=>x.hash===entry.hash);
     if(existing){
       let added = false;
       for(const t of terms){
@@ -1174,11 +1221,16 @@ function scanPaste(){
           added = true;
         }
       }
+      existing.related = existing.related || [];
+      for(const r of relatedRaw){
+        if(!existing.related.includes(r)){ existing.related.push(r); added = true; }
+      }
       if(caseId) existing.caseId = caseId;
       if(pendingId && !existing.caseId) existing.pendingId = pendingId;
       if(added){ existing.foundAt = now; freshRows++; }
     } else {
-      S.hits.unshift({hash, terms, caseId, pendingId, source:"Pasted list", raw:clipped, foundAt:now});
+      S.hits.unshift({hash:entry.hash, terms, caseId, pendingId, source:"Pasted list",
+        raw:entry.clipped, related:relatedRaw, foundAt:now});
       freshRows++;
     }
   }
@@ -1193,7 +1245,7 @@ function scanPaste(){
   const checkedNote = `Checked ${activeKeyCount} keyword${activeKeyCount===1?"":"s"}
     (incl. NADRA / citizenship defaults) and ${activePendingCount} pending file${activePendingCount===1?"":"s"}.` +
     (skippedBench ? ` Skipped ${skippedBench} other-bench line${skippedBench===1?"":"s"} (Bahawalpur/Multan/Rawalpindi).` : "") +
-    (skippedCm ? ` Folded in ${skippedCm} C.M./application line${skippedCm===1?"":"s"} already covered by their main case.` : "");
+    (foldedCm ? ` Grouped ${foldedCm} C.M./application line${foldedCm===1?"":"s"} into their main case's box.` : "");
   out.innerHTML = freshRows
     ? `<div class="okbox" style="margin-top:10px"><b>${freshRows} new/updated case${freshRows===1?"":"s"}</b>
          from ${matchedRows} matched line${matchedRows===1?"":"s"} of ${rows.length} checked. ${checkedNote} See the Diary below —
@@ -1256,9 +1308,12 @@ function viewHit(hash){
     "Source: " + h.source,
     "Found: " + stamp(h.foundAt)
   ].filter(Boolean).map(esc).join("<br>");
+  const related = h.related || [];
   openModal(`<h3>${esc(title)}</h3>
     ${terms.length ? `<div class="meta">Matched: ${terms.map(t=>esc(t.term)+(kindLabel(t.kind)?` (${esc(kindLabel(t.kind))})`:"")).join(", ")}</div>` : ""}
     <div class="hit">${esc(h.raw)}</div>
+    ${related.length ? `<div class="meta" style="margin-top:8px">+ ${related.length} related C.M./application line${related.length===1?"":"s"} in this case:</div>
+      ${related.map(r=>`<div class="hit" style="margin-top:6px">${esc(r)}</div>`).join("")}` : ""}
     <div class="note" style="line-height:1.7">${lines}</div>
     ${c ? `<button class="btn2" style="width:100%;margin-top:12px"
             onclick="closeModal();viewCase(${c.id})">Open ${esc(caseRef(c)||caseTitle(c))}</button>` : ""}

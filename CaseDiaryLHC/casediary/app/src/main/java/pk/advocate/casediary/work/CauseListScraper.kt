@@ -142,34 +142,63 @@ class CauseListScraper(private val context: Context) {
         val found = ArrayList<Fixture>()
         val now = System.currentTimeMillis()
 
-        // First pass: find every matched row and note which ones are bare main
-        // cases, so a C.M./C.M.A. application filed against one of them can be
-        // folded back into the main case instead of listed separately.
-        data class MatchedRow(val row: String, val hits: List<Matcher.Hit>, val cm: Boolean, val parents: List<String>)
-        val matchedRows = ArrayList<MatchedRow>()
-        val mainCaseSeen = HashSet<String>()
-        for (row in rows) {
+        // Pass 1: find every matched row and compute its own identity (hash)
+        // and, for C.M./application rows, which main case they belong to.
+        data class Entry(
+            val row: String, val hits: List<Matcher.Hit>, val cm: Boolean, val parents: List<String>,
+            val clipped: String, val hash: String, var groupHash: String = ""
+        )
+        val entries = rows.mapNotNull { row ->
             val all = Matcher.findHits(row, probes)
-            if (all.isEmpty()) continue
+            if (all.isEmpty()) return@mapNotNull null
             val cm = Matcher.isCmRow(row)
             val parents = if (cm) Matcher.cmParentRefs(row) else emptyList()
-            if (!cm) mainCaseSeen.addAll(Matcher.ownCaseRefs(row))
-            matchedRows.add(MatchedRow(row, all, cm, parents))
+            val clipped = if (row.length > 400) row.substring(0, 400) + "…" else row
+            Entry(row, all, cm, parents, clipped, Matcher.hashOf(sourceUrl, listDate, clipped))
         }
 
-        val seenCmGroups = HashSet<String>()
-        for ((row, all, cm, parents) in matchedRows) {
-            if (cm && parents.isNotEmpty()) {
-                if (parents.any { mainCaseSeen.contains(it) }) continue // main case also matched — drop the C.M.
-                if (!seenCmGroups.add(parents[0])) continue // already represented by another C.M. of the same case
+        // Pass 2: every bare main-case row this scan matched, indexed by its
+        // ref, so a C.M. filed in it can be found regardless of print order.
+        val mainCaseHashByRef = HashMap<String, String>()
+        for (e in entries) {
+            if (e.cm) continue
+            for (ref in Matcher.ownCaseRefs(e.row)) mainCaseHashByRef.putIfAbsent(ref, e.hash)
+        }
+
+        // Pass 3: work out which single "box" each row belongs to. A C.M.
+        // whose main case also matched joins that case's box; a C.M. whose
+        // main case did NOT turn up on its own still gets a box — the first
+        // such C.M. becomes that box, and any further C.M.s of the very same
+        // case join it — so the same case is never shown twice just because
+        // several of its applications matched.
+        val cmGroupHash = HashMap<String, String>()
+        for (e in entries) {
+            e.groupHash = if (e.cm && e.parents.isNotEmpty()) {
+                val mainRef = e.parents.firstOrNull { mainCaseHashByRef.containsKey(it) }
+                if (mainRef != null) {
+                    mainCaseHashByRef.getValue(mainRef)
+                } else {
+                    cmGroupHash.getOrPut(e.parents[0]) { e.hash }
+                }
+            } else {
+                e.hash
             }
-            // A row that is one of the user's own cases belongs under "My cases"
-            // only — a keyword or pending-file match on the same line must not
-            // duplicate it.
-            val mine = all.filter { it.caseId != 0L }
-            val hits = if (mine.isNotEmpty()) mine else all
+        }
+
+        // Pass 4: fold every non-root row into its group's root entry as "related".
+        val roots = LinkedHashMap<String, Pair<Entry, MutableList<Entry>>>()
+        for (e in entries) if (e.hash == e.groupHash) roots[e.hash] = e to ArrayList()
+        for (e in entries) {
+            if (e.hash == e.groupHash) continue
+            val g = roots[e.groupHash]
+            if (g != null) g.second.add(e) else roots[e.hash] = e to ArrayList() // safety net — never silently lose a row
+        }
+
+        for ((entry, related) in roots.values) {
+            val allHits = (listOf(entry) + related).flatMap { it.hits }
+            val mine = allHits.filter { it.caseId != 0L }
+            val hits = if (mine.isNotEmpty()) mine else allHits
             totalHits += hits.size
-            val clipped = if (row.length > 400) row.substring(0, 400) + "…" else row
 
             val caseId = hits.firstOrNull { it.caseId != 0L }?.caseId ?: 0L
             val pendingId = if (caseId == 0L) hits.firstOrNull { it.pendingId != 0L }?.pendingId ?: 0L else 0L
@@ -183,14 +212,15 @@ class CauseListScraper(private val context: Context) {
 
             found.add(
                 Fixture(
-                    hash = Matcher.hashOf(sourceUrl, listDate, clipped),
+                    hash = entry.hash,
                     caseId = caseId,
                     pendingId = pendingId,
                     sourceLabel = sourceLabel,
                     sourceUrl = sourceUrl,
                     listDate = listDate,
-                    raw = clipped,
+                    raw = entry.clipped,
                     terms = termHits,
+                    relatedRaw = related.map { it.clipped },
                     foundAt = now,
                     seen = false
                 )

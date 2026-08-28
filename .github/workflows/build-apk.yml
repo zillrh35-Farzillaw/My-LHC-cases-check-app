@@ -60,6 +60,6 @@ jobs:
           else
             gh release create "$TAG" "$APK" \
               --repo "${{ github.repository }}" \
-              --title "Causelist Sentinel v${{ github.run_number }}" \
+              --title "CCMS v${{ github.run_number }}" \
               --notes "$NOTES"
           fi

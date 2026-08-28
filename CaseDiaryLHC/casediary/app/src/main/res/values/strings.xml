@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Causelist Sentinel</string>
+    <string name="app_name">CCMS</string>
 
     <string name="tab_diary">Diary</string>
     <string name="tab_pending">Pending</string>

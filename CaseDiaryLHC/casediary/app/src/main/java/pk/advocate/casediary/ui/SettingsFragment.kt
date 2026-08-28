@@ -120,7 +120,8 @@ class SettingsFragment : Fragment() {
             importPicker.launch(arrayOf("application/json", "text/plain", "*/*"))
         }
 
-        b.versionText.text = "Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
+        b.versionText.text = "Causelist Checking & Management System (CCMS)\n" +
+            "Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
         b.btnCheckUpdate.setOnClickListener { checkForUpdate() }
 
         renderTerms()

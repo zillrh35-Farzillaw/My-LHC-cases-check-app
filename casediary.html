@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F5132">
-<title>Causelist Sentinel</title>
+<title>CCMS — Causelist Checking &amp; Management System</title>
 <style>
   :root{
     --brand:#0F5132; --brand-dark:#0A3B24; --brand-light:#D7EADF;
@@ -114,7 +114,7 @@
 <body>
 
 <header>
-  <h1 id="hTitle">Causelist Sentinel</h1>
+  <h1 id="hTitle">CCMS</h1>
   <div class="sub" id="hSub">Lahore High Court</div>
 </header>
 
@@ -301,6 +301,10 @@
         so this cannot check the LHC site by itself at 6:30pm — that is why you paste
         the list in. The Android APK does that part automatically.
       </div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">About</b>
+      <div class="note">CCMS — Causelist Checking &amp; Management System</div>
     </div>
   </section>
 </main>
@@ -695,7 +699,7 @@ function fmtDateTime(ms){ if(!ms) return "—"; const d=new Date(ms);
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
 const TABS = ["cases","diary","pending","keys","tasks","backup"];
-const TAB_TITLES = {cases:"Causelist Sentinel", diary:"Diary", pending:"Pending Files", keys:"Keywords", tasks:"Tasks", backup:"Backup"};
+const TAB_TITLES = {cases:"CCMS", diary:"Diary", pending:"Pending Files", keys:"Keywords", tasks:"Tasks", backup:"Backup"};
 function switchTab(name){
   tab = name;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));

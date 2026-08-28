@@ -1,8 +1,6 @@
 <resources>
     <string name="app_name">Causelist Sentinel</string>
 
-    <string name="tab_cases">Saved Cases</string>
-    <string name="saved_cases_caption">Added automatically when you approve a match in the Diary, or add one yourself below.</string>
     <string name="tab_diary">Diary</string>
     <string name="tab_pending">Pending</string>
     <string name="tab_tasks">Tasks</string>
@@ -23,15 +21,12 @@
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
-    <string name="search_hint">Search case no, party, client, court…</string>
 
     <string name="filter_active">Active</string>
     <string name="filter_decided">Decided</string>
     <string name="filter_archived">Archived</string>
-    <string name="filter_all">All</string>
 
-    <string name="empty_cases">No saved cases yet.\nApprove a match in the Diary, or tap + to add one yourself.</string>
-    <string name="empty_diary">Nothing here yet.\nRun a check or add a hearing date to a case.</string>
+    <string name="empty_diary">Nothing here yet.\nOpen the LHC site and scan a page, or add a hearing date to a case.</string>
 
     <string name="case_type">Case type (W.P., Crl. Misc., R.F.A.…)</string>
     <string name="case_no">Case number</string>
@@ -55,7 +50,6 @@
     <string name="add_hearing">Add hearing</string>
     <string name="proceedings">What happened</string>
 
-    <string name="check_now">Check cause lists now</string>
     <string name="open_browser">Open LHC site</string>
     <string name="scan_page">Scan page</string>
     <string name="mark_all_read">Mark all read</string>

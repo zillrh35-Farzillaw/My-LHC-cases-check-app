@@ -11,14 +11,10 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import pk.advocate.casediary.databinding.FragmentDiaryBinding
 import pk.advocate.casediary.databinding.ItemDiaryApproveBinding
 import pk.advocate.casediary.databinding.ItemDiaryBinding
@@ -29,7 +25,6 @@ import pk.advocate.casediary.db.FixedCase
 import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Dates
 import pk.advocate.casediary.util.ReportPdf
-import pk.advocate.casediary.work.CheckWorker
 
 /**
  * One combined feed: pending-file matches, the fixed-cases report (= "My
@@ -46,7 +41,6 @@ class DiaryFragment : Fragment() {
 
     private lateinit var adapter: DiaryAdapter
     private lateinit var db: Db
-    private lateinit var loading: LoadingOverlay
 
     /** Transient (not persisted) selection state for bulk actions. */
     private val selectedHits = HashSet<Long>()
@@ -64,7 +58,6 @@ class DiaryFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         db = Db.get(requireContext())
-        loading = LoadingOverlay(b.loadingOverlay)
 
         adapter = DiaryAdapter(
             onClick = { row ->
@@ -100,7 +93,6 @@ class DiaryFragment : Fragment() {
         b.list.layoutManager = LinearLayoutManager(requireContext())
         b.list.adapter = adapter
 
-        b.btnCheck.setOnClickListener { runCheck() }
         b.btnBrowser.setOnClickListener {
             startActivity(Intent(requireContext(), BrowserActivity::class.java))
         }
@@ -109,7 +101,10 @@ class DiaryFragment : Fragment() {
         b.btnSaveSelected.setOnClickListener { saveSelectedHits() }
         b.btnSelectAll.setOnClickListener { selectAllHits() }
         b.btnClearSelected.setOnClickListener { confirmClearSelected() }
-        b.swipe.setOnRefreshListener { runCheck() }
+        b.swipe.setOnRefreshListener {
+            reload()
+            b.swipe.isRefreshing = false
+        }
 
         // Long-press the status line to wipe the hit history.
         b.status.setOnLongClickListener {
@@ -269,41 +264,6 @@ class DiaryFragment : Fragment() {
         WatchTerm.KIND_CASE -> "case number"
         WatchTerm.KIND_OTHER -> "keyword"
         else -> ""
-    }
-
-    private fun runCheck() {
-        b.swipe.isRefreshing = true
-        b.btnCheck.isEnabled = false
-        loading.show("Scanning cause lists…")
-        val appContext = requireContext().applicationContext
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { CheckWorker.runOnce(appContext) }
-            }
-            if (_b == null) return@launch
-            b.swipe.isRefreshing = false
-            b.btnCheck.isEnabled = true
-            loading.hide()
-            reload()
-
-            result.onSuccess { r ->
-                val msg = when {
-                    r.errors.isNotEmpty() && r.rowsScanned == 0 ->
-                        "Could not read the cause lists. Try the built-in browser."
-                    r.newHits > 0 -> "${r.newHits} new match(es) found" +
-                        if (r.approvalHits > 0) " — ${r.approvalHits} need approval" else ""
-                    r.totalHits > 0 -> "Nothing new — ${r.totalHits} already-seen match(es)"
-                    else -> "No matches in ${r.rowsScanned} rows"
-                }
-                Snackbar.make(b.root, msg, Snackbar.LENGTH_LONG).show()
-            }.onFailure {
-                Snackbar.make(
-                    b.root,
-                    "Check failed: ${it.message ?: "unknown error"}",
-                    Snackbar.LENGTH_LONG
-                ).show()
-            }
-        }
     }
 
     private fun openCase(caseId: Long) {
@@ -565,7 +525,6 @@ class DiaryFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        loading.cancel()
         _b = null
     }
 }

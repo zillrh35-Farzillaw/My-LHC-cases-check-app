@@ -16,26 +16,14 @@
         app:layout_constraintEnd_toEndOf="parent">
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCheck"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/check_now"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_gavel" />
-
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="1dp" />
-
-        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBrowser"
-            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
             android:text="@string/open_browser"
-            android:textSize="12sp"
+            android:textSize="14sp"
             app:icon="@drawable/ic_web" />
     </LinearLayout>
 
@@ -156,16 +144,6 @@
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="@id/swipe"
         app:layout_constraintBottom_toBottomOf="@id/swipe"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <include
-        android:id="@+id/loadingOverlay"
-        layout="@layout/loading_overlay"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

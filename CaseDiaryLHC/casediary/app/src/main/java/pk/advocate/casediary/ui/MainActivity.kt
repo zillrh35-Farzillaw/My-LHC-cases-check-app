@@ -18,7 +18,7 @@ import pk.advocate.casediary.util.UpdateChecker
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
-    private var currentTab: String = TAB_CASES
+    private var currentTab: String = TAB_DIARY
 
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
@@ -30,7 +30,6 @@ class MainActivity : AppCompatActivity() {
 
         b.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.nav_cases -> show(TAB_CASES)
                 R.id.nav_diary -> show(TAB_DIARY)
                 R.id.nav_pending -> show(TAB_PENDING)
                 R.id.nav_tasks -> show(TAB_TASKS)
@@ -39,7 +38,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val requested = intent?.getStringExtra(EXTRA_OPEN_TAB) ?: TAB_CASES
+        val requested = intent?.getStringExtra(EXTRA_OPEN_TAB) ?: TAB_DIARY
         selectTab(requested)
 
         askForNotificationPermission()
@@ -67,33 +66,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectTab(tab: String) {
         b.bottomNav.selectedItemId = when (tab) {
-            TAB_DIARY -> R.id.nav_diary
             TAB_PENDING -> R.id.nav_pending
             TAB_TASKS -> R.id.nav_tasks
             TAB_SETTINGS -> R.id.nav_settings
-            else -> R.id.nav_cases
+            else -> R.id.nav_diary
         }
     }
 
     private fun show(tab: String): Boolean {
         currentTab = tab
         val fragment: Fragment = when (tab) {
-            TAB_DIARY -> DiaryFragment()
             TAB_PENDING -> PendingFragment()
             TAB_TASKS -> TasksFragment()
             TAB_SETTINGS -> SettingsFragment()
-            else -> CasesFragment()
+            else -> DiaryFragment()
         }
         supportFragmentManager.beginTransaction()
             .replace(b.container.id, fragment, tab)
             .commit()
 
         b.toolbar.title = when (tab) {
-            TAB_DIARY -> getString(R.string.tab_diary)
             TAB_PENDING -> getString(R.string.tab_pending)
             TAB_TASKS -> getString(R.string.tab_tasks)
             TAB_SETTINGS -> getString(R.string.tab_settings)
-            TAB_CASES -> getString(R.string.tab_cases)
             else -> getString(R.string.app_name)
         }
         return true
@@ -107,7 +102,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_OPEN_TAB = "open_tab"
-        const val TAB_CASES = "cases"
         const val TAB_DIARY = "diary"
         const val TAB_PENDING = "pending"
         const val TAB_TASKS = "tasks"

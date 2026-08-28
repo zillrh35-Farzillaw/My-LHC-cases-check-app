@@ -220,10 +220,12 @@ class MatcherTest {
 
     @Test
     fun `a case number wrapped in square brackets marks a circuit-bench row`() {
-        // Circuit-bench rows print their case number in brackets even when
-        // the bench name itself isn't spelled out anywhere in the row.
-        assertTrue(Matcher.isOtherBench("1 | [ABC/26] SOME BOLD CAPS TITLE VS ANOTHER PARTY"))
-        assertTrue(Matcher.isOtherBench("2 | [W.P.1234/26] Someone Vs State"))
+        // Circuit-bench rows print their case number bracketed and HYPHEN-
+        // delimited (confirmed against a real LHC export — "[6458-B-26]" or
+        // "[10060-26]", never slash-delimited) even when the bench name
+        // itself isn't spelled out anywhere in the row.
+        assertTrue(Matcher.isOtherBench("1 | [6458-B-26] SOME BOLD CAPS TITLE VS ANOTHER PARTY"))
+        assertTrue(Matcher.isOtherBench("2 | [10060-26] Someone Vs State"))
         assertFalse(Matcher.isOtherBench("3 | W.P. 8/2026 Someone vs State, no brackets at all"))
     }
 

@@ -135,7 +135,9 @@ class Db private constructor(context: Context) :
                 causelist_no TEXT NOT NULL DEFAULT '',
                 fixed_date INTEGER NOT NULL DEFAULT 0,
                 source_raw TEXT NOT NULL DEFAULT '',
-                case_id INTEGER NOT NULL DEFAULT 0
+                case_id INTEGER NOT NULL DEFAULT 0,
+                judge TEXT NOT NULL DEFAULT '',
+                hearing_date TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent()
         )
@@ -254,6 +256,14 @@ class Db private constructor(context: Context) :
                 )
                 """.trimIndent()
             )
+        }
+        if (oldVersion < 8) {
+            try {
+                db.execSQL("ALTER TABLE fixed_cases ADD COLUMN judge TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE fixed_cases ADD COLUMN hearing_date TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
         }
         createIndexes(db)
     }
@@ -1024,10 +1034,15 @@ class Db private constructor(context: Context) :
             put("fixed_date", if (f.fixedDate == 0L) System.currentTimeMillis() else f.fixedDate)
             put("source_raw", f.sourceRaw)
             put("case_id", f.caseId)
+            put("judge", f.judge)
+            put("hearing_date", f.hearingDate)
         }
         return writableDatabase.insert("fixed_cases", null, cv)
     }
 
+    /** Only the fields the edit dialog actually exposes — judge and hearing
+     *  date are set once at save time (see [addFixedCase]) and left alone
+     *  here so editing other fields can never silently blank them out. */
     fun updateFixedCase(f: FixedCase) {
         val cv = ContentValues().apply {
             put("title_no", f.titleNo)
@@ -1055,6 +1070,8 @@ class Db private constructor(context: Context) :
         val out = ArrayList<FixedCase>()
         readableDatabase.query("fixed_cases", null, null, null, null, null, "fixed_date DESC, id DESC")
             .use { cur ->
+                val judgeIdx = cur.getColumnIndex("judge")
+                val hearingIdx = cur.getColumnIndex("hearing_date")
                 while (cur.moveToNext()) {
                     out.add(
                         FixedCase(
@@ -1066,7 +1083,9 @@ class Db private constructor(context: Context) :
                             causelistNo = cur.getString(cur.getColumnIndexOrThrow("causelist_no")),
                             fixedDate = cur.getLong(cur.getColumnIndexOrThrow("fixed_date")),
                             sourceRaw = cur.getString(cur.getColumnIndexOrThrow("source_raw")),
-                            caseId = cur.getLong(cur.getColumnIndexOrThrow("case_id"))
+                            caseId = cur.getLong(cur.getColumnIndexOrThrow("case_id")),
+                            judge = if (judgeIdx < 0) "" else cur.getString(judgeIdx).orEmpty(),
+                            hearingDate = if (hearingIdx < 0) "" else cur.getString(hearingIdx).orEmpty()
                         )
                     )
                 }
@@ -1121,7 +1140,7 @@ class Db private constructor(context: Context) :
 
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 7
+        private const val VERSION = 8
 
         @Volatile
         private var instance: Db? = null

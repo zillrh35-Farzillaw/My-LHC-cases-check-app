@@ -41,19 +41,19 @@ class SplashActivity : AppCompatActivity() {
             PropertyValuesHolder.ofFloat(View.ALPHA, 0f, 1f),
             PropertyValuesHolder.ofFloat(View.SCALE_X, 0.7f, 1f),
             PropertyValuesHolder.ofFloat(View.SCALE_Y, 0.7f, 1f)
-        ).apply { duration = 420 }
+        ).apply { duration = 840 }
 
         val title = ObjectAnimator.ofPropertyValuesHolder(
             b.splashTitle,
             PropertyValuesHolder.ofFloat(View.ALPHA, 0f, 1f),
             PropertyValuesHolder.ofFloat(View.TRANSLATION_Y, 16f, 0f)
-        ).apply { duration = 420; startDelay = 120 }
+        ).apply { duration = 840; startDelay = 240 }
 
         val subtitle = ObjectAnimator.ofFloat(b.splashSubtitle, View.ALPHA, 0f, 1f)
-            .apply { duration = 360; startDelay = 320 }
+            .apply { duration = 720; startDelay = 640 }
 
         val credit = ObjectAnimator.ofFloat(b.splashCredit, View.ALPHA, 0f, 1f)
-            .apply { duration = 360; startDelay = 420 }
+            .apply { duration = 720; startDelay = 840 }
 
         AnimatorSet().apply {
             playTogether(icon, title, subtitle, credit)
@@ -69,6 +69,6 @@ class SplashActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val SPLASH_DURATION_MS = 1600L
+        private const val SPLASH_DURATION_MS = 3200L
     }
 }

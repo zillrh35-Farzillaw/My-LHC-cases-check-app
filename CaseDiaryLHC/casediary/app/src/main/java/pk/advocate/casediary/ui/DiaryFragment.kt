@@ -22,6 +22,7 @@ import pk.advocate.casediary.databinding.ItemDiaryHeaderBinding
 import pk.advocate.casediary.databinding.ItemFixedBinding
 import pk.advocate.casediary.db.Db
 import pk.advocate.casediary.db.FixedCase
+import pk.advocate.casediary.db.Fixture
 import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Dates
 import pk.advocate.casediary.util.ReportPdf
@@ -131,7 +132,7 @@ class DiaryFragment : Fragment() {
                         pendingId = f.pendingId,
                         headline = pendingTitle ?: f.termsLabel().ifBlank { "Pending file match" },
                         detail = f.detailText(),
-                        whenText = Dates.fmtStamp(f.foundAt)
+                        whenText = whenTextWithHearingDate(f)
                     )
                 )
                 continue
@@ -139,7 +140,7 @@ class DiaryFragment : Fragment() {
             val row = DiaryRow.Hit(
                 fixtureId = f.id,
                 badge = f.sourceLabel.ifBlank { "Cause list" },
-                whenText = Dates.fmtStamp(f.foundAt),
+                whenText = whenTextWithHearingDate(f),
                 headline = f.termsLabel().ifBlank { "Match" },
                 detail = f.detailText(),
                 listDate = f.listDate,
@@ -160,7 +161,9 @@ class DiaryFragment : Fragment() {
                     court = fc.court,
                     prayer = fc.prayer,
                     proceedings = fc.proceedings,
-                    causelistNo = fc.causelistNo
+                    causelistNo = fc.causelistNo,
+                    judge = fc.judge,
+                    hearingDate = fc.hearingDate
                 )
             )
         }
@@ -245,6 +248,20 @@ class DiaryFragment : Fragment() {
             .setNegativeButton("Cancel", null)
             .show()
     }
+
+    /** The cause list's own printed date (when this case is fixed for hearing)
+     *  is easy to miss buried in the detail dialog — shown right on the card
+     *  face, next to when the app found it, so it gets the attention it needs. */
+    private fun whenTextWithHearingDate(f: Fixture): String {
+        val found = Dates.fmtStamp(f.foundAt)
+        return if (f.listDate.isNotBlank()) "$found · Hearing: ${f.listDate}" else found
+    }
+
+    /** A row's presiding judge is prefixed onto its own raw text as "[Judge X] ..."
+     *  (see Matcher.extractJudge / CauseListScraper) — pulled back out here so a
+     *  saved case can carry it as its own field instead of buried in free text. */
+    private fun extractJudgePrefix(raw: String): String? =
+        Regex("^\\[(.+?)\\]\\s").find(raw)?.groupValues?.get(1)
 
     private fun kindLabel(kind: String): String = when (kind) {
         WatchTerm.KIND_ADVOCATE -> "counsel name"
@@ -338,7 +355,9 @@ class DiaryFragment : Fragment() {
                         proceedings = proceedingsInput.text?.toString()?.trim().orEmpty(),
                         causelistNo = causelistInput.text?.toString()?.trim().orEmpty(),
                         sourceRaw = f.fullRaw(),
-                        caseId = caseId
+                        caseId = caseId,
+                        judge = extractJudgePrefix(f.raw).orEmpty(),
+                        hearingDate = f.listDate
                     )
                 )
                 if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
@@ -362,7 +381,15 @@ class DiaryFragment : Fragment() {
                 ?: savedCase?.let { it.caseRef().ifBlank { it.title() } }
                 ?: f.termsLabel()
             val caseId = db.resolveCaseFromApproval(titleNo, "", f.caseId)
-            db.addFixedCase(FixedCase(titleNo = titleNo, sourceRaw = f.fullRaw(), caseId = caseId))
+            db.addFixedCase(
+                FixedCase(
+                    titleNo = titleNo,
+                    sourceRaw = f.fullRaw(),
+                    caseId = caseId,
+                    judge = extractJudgePrefix(f.raw).orEmpty(),
+                    hearingDate = f.listDate
+                )
+            )
             if (f.pendingId != 0L) db.deletePendingFile(f.pendingId)
             db.deleteFixture(f.id)
         }
@@ -556,7 +583,9 @@ sealed class DiaryRow {
         val court: String,
         val prayer: String,
         val proceedings: String,
-        val causelistNo: String
+        val causelistNo: String,
+        val judge: String = "",
+        val hearingDate: String = ""
     ) : DiaryRow()
 }
 
@@ -644,6 +673,8 @@ class DiaryAdapter(
                 v.b.headline.text = "${row.srNo}. ${row.titleNo}"
                 v.b.detail.text = listOfNotNull(
                     row.court.takeIf { it.isNotBlank() },
+                    row.judge.takeIf { it.isNotBlank() && !it.equals(row.court, ignoreCase = true) },
+                    row.hearingDate.takeIf { it.isNotBlank() }?.let { "Hearing: $it" },
                     row.prayer.takeIf { it.isNotBlank() },
                     row.proceedings.takeIf { it.isNotBlank() },
                     row.causelistNo.takeIf { it.isNotBlank() }?.let { "Causelist No. $it" }

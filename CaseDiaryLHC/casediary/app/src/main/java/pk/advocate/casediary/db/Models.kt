@@ -172,9 +172,9 @@ data class PendingFile(
 }
 
 /**
- * A row in the exportable "Urgent Cases Report" — mirrors the lawyer's own
- * document format: Sr No., Title & No. of the case, Name of the Court,
- * Nature of Prayer & Remarks, Proceedings, Urgent Causelist No.
+ * A case the lawyer has approved/saved from a Diary match. Carries enough on
+ * its own face (title & case no., court, judge, hearing date) that the lawyer
+ * doesn't have to open a dialog just to see what it's about.
  */
 data class FixedCase(
     var id: Long = 0,
@@ -186,7 +186,11 @@ data class FixedCase(
     var fixedDate: Long = 0L,
     var sourceRaw: String = "",
     /** 0 unless this came from (and links back to) a case saved in the Cases tab. */
-    var caseId: Long = 0
+    var caseId: Long = 0,
+    /** The presiding judge, when the cause list row it came from carried one. */
+    var judge: String = "",
+    /** The cause list's own printed date — when this case is fixed for hearing. */
+    var hearingDate: String = ""
 )
 
 /**

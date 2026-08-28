@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import pk.advocate.casediary.work.Matcher
 
 /**
  * Plain SQLite. No ORM, no annotation processing — everything the app stores
@@ -39,7 +40,8 @@ class Db private constructor(context: Context) :
                 fee_received REAL NOT NULL DEFAULT 0,
                 notes TEXT NOT NULL DEFAULT '',
                 created_at INTEGER NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL DEFAULT 0
+                updated_at INTEGER NOT NULL DEFAULT 0,
+                watched INTEGER NOT NULL DEFAULT 1
             )
             """.trimIndent()
         )
@@ -62,12 +64,13 @@ class Db private constructor(context: Context) :
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 hash TEXT NOT NULL UNIQUE,
                 case_id INTEGER NOT NULL DEFAULT 0,
+                pending_id INTEGER NOT NULL DEFAULT 0,
                 source_label TEXT NOT NULL DEFAULT '',
                 source_url TEXT NOT NULL DEFAULT '',
                 list_date TEXT NOT NULL DEFAULT '',
                 raw TEXT NOT NULL DEFAULT '',
-                matched_term TEXT NOT NULL DEFAULT '',
-                matched_kind TEXT NOT NULL DEFAULT '',
+                terms_json TEXT NOT NULL DEFAULT '[]',
+                related_json TEXT NOT NULL DEFAULT '[]',
                 found_at INTEGER NOT NULL DEFAULT 0,
                 seen INTEGER NOT NULL DEFAULT 0
             )
@@ -79,7 +82,9 @@ class Db private constructor(context: Context) :
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 term TEXT NOT NULL,
                 kind TEXT NOT NULL DEFAULT 'ADVOCATE',
-                enabled INTEGER NOT NULL DEFAULT 1
+                enabled INTEGER NOT NULL DEFAULT 1,
+                priority TEXT NOT NULL DEFAULT 'OTHER',
+                builtin INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -93,8 +98,63 @@ class Db private constructor(context: Context) :
             )
             """.trimIndent()
         )
+        db.execSQL(
+            """
+            CREATE TABLE pending_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                added_at INTEGER NOT NULL DEFAULT 0,
+                case_type TEXT NOT NULL DEFAULT '',
+                case_no TEXT NOT NULL DEFAULT '',
+                case_year TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE law_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                assigned_by TEXT NOT NULL DEFAULT '',
+                deadline INTEGER NOT NULL DEFAULT 0,
+                done INTEGER NOT NULL DEFAULT 0,
+                done_at INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE fixed_cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title_no TEXT NOT NULL,
+                court TEXT NOT NULL DEFAULT '',
+                prayer TEXT NOT NULL DEFAULT '',
+                proceedings TEXT NOT NULL DEFAULT '',
+                causelist_no TEXT NOT NULL DEFAULT '',
+                fixed_date INTEGER NOT NULL DEFAULT 0,
+                source_raw TEXT NOT NULL DEFAULT '',
+                case_id INTEGER NOT NULL DEFAULT 0,
+                judge TEXT NOT NULL DEFAULT '',
+                hearing_date TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE scan_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scanned_at INTEGER NOT NULL DEFAULT 0,
+                source_label TEXT NOT NULL DEFAULT '',
+                row_text TEXT NOT NULL DEFAULT ''
+            )
+            """.trimIndent()
+        )
         createIndexes(db)
         seedSources(db)
+        seedDefaultKeywords(db)
+        seedDefaultPending(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -107,6 +167,188 @@ class Db private constructor(context: Context) :
                 // Column already present — nothing to do.
             }
         }
+        if (oldVersion < 3) {
+            try {
+                db.execSQL("ALTER TABLE fixtures ADD COLUMN pending_id INTEGER NOT NULL DEFAULT 0")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE watch_terms ADD COLUMN priority TEXT NOT NULL DEFAULT 'OTHER'")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE watch_terms ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0")
+            } catch (_: Exception) { /* already present */ }
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS pending_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    note TEXT NOT NULL DEFAULT '',
+                    added_at INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS fixed_cases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title_no TEXT NOT NULL,
+                    court TEXT NOT NULL DEFAULT '',
+                    prayer TEXT NOT NULL DEFAULT '',
+                    proceedings TEXT NOT NULL DEFAULT '',
+                    causelist_no TEXT NOT NULL DEFAULT '',
+                    fixed_date INTEGER NOT NULL DEFAULT 0,
+                    source_raw TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS scan_rows (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scanned_at INTEGER NOT NULL DEFAULT 0,
+                    source_label TEXT NOT NULL DEFAULT '',
+                    row_text TEXT NOT NULL DEFAULT ''
+                )
+                """.trimIndent()
+            )
+            seedDefaultKeywords(db)
+        }
+        if (oldVersion < 4) {
+            try {
+                db.execSQL("ALTER TABLE fixed_cases ADD COLUMN case_id INTEGER NOT NULL DEFAULT 0")
+            } catch (_: Exception) { /* already present */ }
+            seedDefaultPending(db)
+        }
+        if (oldVersion < 5) {
+            try {
+                db.execSQL("ALTER TABLE cases ADD COLUMN watched INTEGER NOT NULL DEFAULT 1")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE fixtures ADD COLUMN terms_json TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            migrateFixtureTerms(db)
+        }
+        if (oldVersion < 6) {
+            try {
+                db.execSQL("ALTER TABLE fixtures ADD COLUMN related_json TEXT NOT NULL DEFAULT '[]'")
+            } catch (_: Exception) { /* already present */ }
+        }
+        if (oldVersion < 7) {
+            try {
+                db.execSQL("ALTER TABLE pending_files ADD COLUMN case_type TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE pending_files ADD COLUMN case_no TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE pending_files ADD COLUMN case_year TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS law_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    assigned_by TEXT NOT NULL DEFAULT '',
+                    deadline INTEGER NOT NULL DEFAULT 0,
+                    done INTEGER NOT NULL DEFAULT 0,
+                    done_at INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
+        }
+        if (oldVersion < 8) {
+            try {
+                db.execSQL("ALTER TABLE fixed_cases ADD COLUMN judge TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+            try {
+                db.execSQL("ALTER TABLE fixed_cases ADD COLUMN hearing_date TEXT NOT NULL DEFAULT ''")
+            } catch (_: Exception) { /* already present */ }
+        }
+        createIndexes(db)
+    }
+
+    /**
+     * Pre-v5, every matched keyword on a row became its own [fixtures] row, so a
+     * line hit by three keywords showed up three times in the Diary. This folds
+     * every such row sharing the same page + line back into a single row with
+     * all its matched terms kept together in terms_json, and drops the rest —
+     * exactly the consolidation new scans do going forward (see
+     * CauseListScraper.scanRows).
+     */
+    private fun migrateFixtureTerms(db: SQLiteDatabase) {
+        data class OldRow(
+            val id: Long, val caseId: Long, val pendingId: Long,
+            val sourceUrl: String, val listDate: String, val raw: String,
+            val term: String, val kind: String, val foundAt: Long, val seen: Boolean
+        )
+        val olds = ArrayList<OldRow>()
+        db.rawQuery(
+            "SELECT id, case_id, pending_id, source_url, list_date, raw, matched_term, matched_kind, found_at, seen, terms_json FROM fixtures",
+            null
+        ).use { cur ->
+            while (cur.moveToNext()) {
+                val termsJson = cur.getString(10)
+                if (!termsJson.isNullOrBlank() && termsJson != "[]") continue // already migrated
+                olds.add(
+                    OldRow(
+                        id = cur.getLong(0), caseId = cur.getLong(1), pendingId = cur.getLong(2),
+                        sourceUrl = cur.getString(3) ?: "", listDate = cur.getString(4) ?: "",
+                        raw = cur.getString(5) ?: "", term = cur.getString(6) ?: "",
+                        kind = cur.getString(7) ?: "", foundAt = cur.getLong(8), seen = cur.getInt(9) == 1
+                    )
+                )
+            }
+        }
+        if (olds.isEmpty()) return
+
+        class Group(val sourceUrl: String, val listDate: String, val raw: String) {
+            var caseId = 0L
+            var pendingId = 0L
+            var foundAt = 0L
+            var seen = true
+            val ids = ArrayList<Long>()
+            val terms = LinkedHashMap<String, org.json.JSONObject>() // normalized term -> {term, kind}
+        }
+        val groups = LinkedHashMap<String, Group>()
+        for (o in olds) {
+            val key = "${o.sourceUrl}|${o.listDate}|${pk.advocate.casediary.work.Matcher.normalize(o.raw)}"
+            val g = groups.getOrPut(key) { Group(o.sourceUrl, o.listDate, o.raw) }
+            g.ids.add(o.id)
+            if (o.caseId != 0L) g.caseId = o.caseId
+            if (o.pendingId != 0L && g.caseId == 0L) g.pendingId = o.pendingId
+            if (o.foundAt > g.foundAt) g.foundAt = o.foundAt
+            if (!o.seen) g.seen = false
+            if (o.term.isNotBlank()) {
+                val nk = pk.advocate.casediary.work.Matcher.normalize(o.term)
+                g.terms.putIfAbsent(nk, org.json.JSONObject().put("term", o.term).put("kind", o.kind))
+            }
+        }
+
+        db.beginTransaction()
+        try {
+            for ((_, g) in groups) {
+                val survivorId = g.ids.minOrNull() ?: continue
+                val jsonArray = org.json.JSONArray()
+                for (t in g.terms.values) jsonArray.put(t)
+                val cv = ContentValues().apply {
+                    put("hash", pk.advocate.casediary.work.Matcher.hashOf(g.sourceUrl, g.listDate, g.raw))
+                    put("case_id", g.caseId)
+                    put("pending_id", g.pendingId)
+                    put("terms_json", jsonArray.toString())
+                    put("found_at", g.foundAt)
+                    put("seen", if (g.seen) 1 else 0)
+                }
+                db.update("fixtures", cv, "id=?", arrayOf(survivorId.toString()))
+                for (dupId in g.ids) {
+                    if (dupId == survivorId) continue
+                    db.delete("fixtures", "id=?", arrayOf(dupId.toString()))
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     private fun createIndexes(db: SQLiteDatabase) {
@@ -117,6 +359,67 @@ class Db private constructor(context: Context) :
         // and the reminder query is status + next_date.
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_cases_status_next ON cases(status, next_date)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_fixtures_seen ON fixtures(seen)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_scan_rows_at ON scan_rows(scanned_at)")
+    }
+
+    /**
+     * NADRA and citizenship/identity-card matters must never be missed —
+     * these are seeded on first run (and during upgrade) as locked, always-on,
+     * PRIMARY-priority keywords. Idempotent: skips any term already present.
+     */
+    private fun seedDefaultKeywords(db: SQLiteDatabase) {
+        val defaults = listOf(
+            "NADRA" to WatchTerm.KIND_OTHER,
+            "National Database" to WatchTerm.KIND_OTHER,
+            "Identity Card" to WatchTerm.KIND_OTHER,
+            "Citizenship" to WatchTerm.KIND_OTHER,
+            "Munir Afsar" to WatchTerm.KIND_ADVOCATE,
+            "Ashba Kamran" to WatchTerm.KIND_ADVOCATE,
+            "Fizza Shahid" to WatchTerm.KIND_ADVOCATE,
+            "Fiza Shahid" to WatchTerm.KIND_ADVOCATE
+        )
+        val existing = HashSet<String>()
+        db.rawQuery("SELECT term FROM watch_terms", null).use { cur ->
+            while (cur.moveToNext()) existing.add(cur.getString(0).trim().lowercase())
+        }
+        for ((term, kind) in defaults) {
+            if (existing.contains(term.lowercase())) continue
+            val cv = ContentValues().apply {
+                put("term", term)
+                put("kind", kind)
+                put("enabled", 1)
+                put("priority", WatchTerm.PRIORITY_PRIMARY)
+                put("builtin", 1)
+            }
+            db.insert("watch_terms", null, cv)
+        }
+    }
+
+
+    /**
+     * Pending files used to be seeded here from a client-name list supplied
+     * early on. That data has been removed from source — this repo is
+     * public, and real client/party names have no business sitting in
+     * public source code. Nothing already saved on a phone is affected (it
+     * lives in that phone's local database, not here); a brand-new install
+     * just starts with an empty Pending Files list, same as Cases and
+     * Keywords always have. Idempotent: skips any title already present.
+     */
+    private fun seedDefaultPending(db: SQLiteDatabase) {
+        val defaults = listOf<Pair<String, String>>()
+        val existing = HashSet<String>()
+        db.rawQuery("SELECT title FROM pending_files", null).use { cur ->
+            while (cur.moveToNext()) existing.add(cur.getString(0).trim().lowercase())
+        }
+        for ((title, note) in defaults) {
+            if (existing.contains(title.trim().lowercase())) continue
+            val cv = ContentValues().apply {
+                put("title", title)
+                put("note", note)
+                put("added_at", System.currentTimeMillis())
+            }
+            db.insert("pending_files", null, cv)
+        }
     }
 
     private fun seedSources(db: SQLiteDatabase) {
@@ -182,6 +485,7 @@ class Db private constructor(context: Context) :
             put("fee_received", c.feeReceived)
             put("notes", c.notes)
             put("updated_at", now)
+            put("watched", if (c.watched) 1 else 0)
         }
         return if (c.id == 0L) {
             cv.put("created_at", now)
@@ -196,6 +500,38 @@ class Db private constructor(context: Context) :
 
     fun deleteCase(id: Long) {
         writableDatabase.delete("cases", "id=?", arrayOf(id.toString()))
+    }
+
+    /**
+     * Approving a scan result should also populate the Cases tab — not just
+     * the exportable Fixed-cases report — so a case spotted by scanning
+     * becomes a fully trackable Case (hearings, fees, notes, future
+     * watching) without ever typing a case number in by hand. Only acts
+     * when a case number can be parsed out of the confirmed title;
+     * otherwise the caller's Fixed-cases entry is saved without a Case
+     * link, exactly as before. Manual "+ Add case" stays available for a
+     * case you already know the number of before it's ever spotted.
+     *
+     * @return the resolved case id, or 0 if no case number could be parsed.
+     */
+    fun resolveCaseFromApproval(titleNo: String, court: String, existingCaseId: Long): Long {
+        if (existingCaseId != 0L) return existingCaseId
+        val ref = pk.advocate.casediary.work.Matcher.parseCaseRef(titleNo) ?: return 0L
+        val existing = listCases(null, null).find { it.caseNo == ref.caseNo && it.caseYear == ref.caseYear }
+        if (existing != null) {
+            if (existing.court.isBlank() && court.isNotBlank()) existing.court = court
+            saveCase(existing)
+            return existing.id
+        }
+        val vsMatch = Regex("^(.*?)\\bvs\\.?\\b(.*)$", RegexOption.IGNORE_CASE).find(titleNo)
+        val ownRefText = "${ref.caseType} ${ref.caseNo}/${ref.caseYear}"
+        val petitioner = vsMatch?.groupValues?.get(1)?.replace(ownRefText, "", ignoreCase = true)?.trim().orEmpty()
+        val respondent = vsMatch?.groupValues?.get(2)?.replace(Regex("etc\\.?\\s*$", RegexOption.IGNORE_CASE), "")?.trim().orEmpty()
+        val c = Case(
+            caseType = ref.caseType, caseNo = ref.caseNo, caseYear = ref.caseYear,
+            petitioner = petitioner, respondent = respondent, court = court, watched = true
+        )
+        return saveCase(c)
     }
 
     fun getCase(id: Long): Case? =
@@ -264,7 +600,8 @@ class Db private constructor(context: Context) :
         feeReceived = cur.getDouble(cur.getColumnIndexOrThrow("fee_received")),
         notes = cur.getString(cur.getColumnIndexOrThrow("notes")),
         createdAt = cur.getLong(cur.getColumnIndexOrThrow("created_at")),
-        updatedAt = cur.getLong(cur.getColumnIndexOrThrow("updated_at"))
+        updatedAt = cur.getLong(cur.getColumnIndexOrThrow("updated_at")),
+        watched = cur.getColumnIndex("watched").let { it < 0 || cur.getInt(it) == 1 }
     )
 
     // ------------------------------------------------------------- hearings
@@ -314,9 +651,10 @@ class Db private constructor(context: Context) :
     // ------------------------------------------------------------- fixtures
 
     /**
-     * Insert a page's worth of hits in one transaction and return only the ones
-     * that were genuinely new. Doing this row-by-row costs a separate fsync per
-     * insert, which is what makes a large cause list feel slow.
+     * Insert a page's worth of rows in one transaction and return only the ones
+     * that were genuinely new (or gained a newly-matched term). Doing this
+     * row-by-row costs a separate fsync per insert, which is what makes a large
+     * cause list feel slow.
      */
     fun insertFixtures(list: List<Fixture>): List<Fixture> {
         if (list.isEmpty()) return emptyList()
@@ -334,24 +672,101 @@ class Db private constructor(context: Context) :
         return fresh
     }
 
-    /** @return true if this row was new (and therefore worth notifying about) */
+    /**
+     * A row is identified purely by its (source, list date, text) hash — never
+     * by which term matched — so the same cause-list line is always one
+     * [fixtures] row. If the hash already exists (this exact line was seen on
+     * an earlier scan), any newly-matched terms are merged into it instead of
+     * creating a duplicate row.
+     *
+     * @return true if this row is new, or gained a term it did not have before
+     *   (either way, worth notifying about / showing as "fresh").
+     */
     fun insertFixtureIfNew(f: Fixture): Boolean {
-        val cv = ContentValues().apply {
-            put("hash", f.hash)
-            put("case_id", f.caseId)
-            put("source_label", f.sourceLabel)
-            put("source_url", f.sourceUrl)
-            put("list_date", f.listDate)
-            put("raw", f.raw)
-            put("matched_term", f.matchedTerm)
-            put("matched_kind", f.matchedKind)
-            put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
-            put("seen", if (f.seen) 1 else 0)
+        val db = writableDatabase
+        val existingId = db.rawQuery(
+            "SELECT id, terms_json, related_json FROM fixtures WHERE hash=?", arrayOf(f.hash)
+        ).use { cur -> if (cur.moveToFirst()) Triple(cur.getLong(0), cur.getString(1), cur.getString(2)) else null }
+
+        if (existingId == null) {
+            val cv = ContentValues().apply {
+                put("hash", f.hash)
+                put("case_id", f.caseId)
+                put("pending_id", f.pendingId)
+                put("source_label", f.sourceLabel)
+                put("source_url", f.sourceUrl)
+                put("list_date", f.listDate)
+                put("raw", f.raw)
+                put("terms_json", termsToJson(f.terms))
+                put("related_json", stringsToJson(f.relatedRaw))
+                put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
+                put("seen", if (f.seen) 1 else 0)
+            }
+            return db.insertWithOnConflict("fixtures", null, cv, SQLiteDatabase.CONFLICT_IGNORE) != -1L
         }
-        val id = writableDatabase.insertWithOnConflict(
-            "fixtures", null, cv, SQLiteDatabase.CONFLICT_IGNORE
-        )
-        return id != -1L
+
+        val (id, existingTermsJson, existingRelatedJson) = existingId
+        val existingTerms = jsonToTerms(existingTermsJson).toMutableList()
+        var added = false
+        for (t in f.terms) {
+            if (existingTerms.none { pk.advocate.casediary.work.Matcher.normalize(it.term) == pk.advocate.casediary.work.Matcher.normalize(t.term) }) {
+                existingTerms.add(t)
+                added = true
+            }
+        }
+        val existingRelated = jsonToStrings(existingRelatedJson).toMutableList()
+        for (r in f.relatedRaw) {
+            if (r !in existingRelated) {
+                existingRelated.add(r)
+                added = true
+            }
+        }
+        if (!added && f.caseId == 0L && f.pendingId == 0L) return false
+
+        val cv = ContentValues().apply {
+            put("terms_json", termsToJson(existingTerms))
+            put("related_json", stringsToJson(existingRelated))
+            if (f.caseId != 0L) put("case_id", f.caseId)
+            if (f.pendingId != 0L) put("pending_id", f.pendingId)
+            if (added) put("found_at", if (f.foundAt == 0L) System.currentTimeMillis() else f.foundAt)
+        }
+        db.update("fixtures", cv, "id=?", arrayOf(id.toString()))
+        return added
+    }
+
+    private fun termsToJson(terms: List<TermHit>): String {
+        val arr = org.json.JSONArray()
+        for (t in terms) arr.put(org.json.JSONObject().put("term", t.term).put("kind", t.kind))
+        return arr.toString()
+    }
+
+    private fun jsonToTerms(json: String?): List<TermHit> {
+        if (json.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                TermHit(o.optString("term"), o.optString("kind"))
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun stringsToJson(items: List<String>): String {
+        val arr = org.json.JSONArray()
+        for (s in items) arr.put(s)
+        return arr.toString()
+    }
+
+    private fun jsonToStrings(json: String?): List<String> {
+        if (json.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun listFixtures(limit: Int = 300): List<Fixture> {
@@ -360,17 +775,19 @@ class Db private constructor(context: Context) :
             "fixtures", null, null, null, null, null, "found_at DESC, id DESC", limit.toString()
         ).use { cur ->
             while (cur.moveToNext()) {
+                val relatedIdx = cur.getColumnIndex("related_json")
                 out.add(
                     Fixture(
                         id = cur.getLong(cur.getColumnIndexOrThrow("id")),
                         hash = cur.getString(cur.getColumnIndexOrThrow("hash")),
                         caseId = cur.getLong(cur.getColumnIndexOrThrow("case_id")),
+                        pendingId = cur.getLong(cur.getColumnIndexOrThrow("pending_id")),
                         sourceLabel = cur.getString(cur.getColumnIndexOrThrow("source_label")),
                         sourceUrl = cur.getString(cur.getColumnIndexOrThrow("source_url")),
                         listDate = cur.getString(cur.getColumnIndexOrThrow("list_date")),
                         raw = cur.getString(cur.getColumnIndexOrThrow("raw")),
-                        matchedTerm = cur.getString(cur.getColumnIndexOrThrow("matched_term")),
-                        matchedKind = cur.getString(cur.getColumnIndexOrThrow("matched_kind")),
+                        terms = jsonToTerms(cur.getString(cur.getColumnIndexOrThrow("terms_json"))),
+                        relatedRaw = if (relatedIdx < 0) emptyList() else jsonToStrings(cur.getString(relatedIdx)),
                         foundAt = cur.getLong(cur.getColumnIndexOrThrow("found_at")),
                         seen = cur.getInt(cur.getColumnIndexOrThrow("seen")) == 1
                     )
@@ -378,6 +795,10 @@ class Db private constructor(context: Context) :
             }
         }
         return out
+    }
+
+    fun deleteFixture(id: Long) {
+        writableDatabase.delete("fixtures", "id=?", arrayOf(id.toString()))
     }
 
     fun markAllFixturesSeen() {
@@ -399,38 +820,71 @@ class Db private constructor(context: Context) :
         writableDatabase.delete("fixtures", "found_at < ?", arrayOf(cutoff.toString()))
     }
 
+    /** Retroactively removes any already-stored fixture that fails the
+     *  CURRENT bench filter. A fixture saved by an earlier build (before a
+     *  bench-detection fix shipped) never gets re-checked on its own once
+     *  it's in the table — this makes every future scan self-heal instead of
+     *  leaving stale circuit-bench hits behind forever. No-op if the lawyer
+     *  has actually turned the Lahore-only filter off. */
+    fun pruneOtherBenchFixtures(principalSeatOnly: Boolean) {
+        if (!principalSeatOnly) return
+        val toDelete = ArrayList<Long>()
+        readableDatabase.query("fixtures", arrayOf("id", "raw"), null, null, null, null, null).use { cur ->
+            val idIdx = cur.getColumnIndexOrThrow("id")
+            val rawIdx = cur.getColumnIndexOrThrow("raw")
+            while (cur.moveToNext()) {
+                if (Matcher.isOtherBench(cur.getString(rawIdx).orEmpty())) toDelete.add(cur.getLong(idIdx))
+            }
+        }
+        if (toDelete.isNotEmpty()) {
+            writableDatabase.delete("fixtures", "id IN (${toDelete.joinToString(",")})", null)
+        }
+    }
+
     // ---------------------------------------------------------- watch terms
 
-    fun addWatchTerm(term: String, kind: String): Long {
+    fun addWatchTerm(term: String, kind: String, priority: String = WatchTerm.PRIORITY_OTHER): Long {
         val cv = ContentValues().apply {
             put("term", term.trim())
             put("kind", kind)
             put("enabled", 1)
+            put("priority", priority)
+            put("builtin", 0)
         }
         return writableDatabase.insert("watch_terms", null, cv)
     }
 
+    /** Builtin (NADRA/citizenship defaults) keywords are locked — this is a no-op for them. */
     fun deleteWatchTerm(id: Long) {
-        writableDatabase.delete("watch_terms", "id=?", arrayOf(id.toString()))
+        writableDatabase.delete("watch_terms", "id=? AND builtin=0", arrayOf(id.toString()))
     }
 
     fun setWatchTermEnabled(id: Long, enabled: Boolean) {
         val cv = ContentValues().apply { put("enabled", if (enabled) 1 else 0) }
-        writableDatabase.update("watch_terms", cv, "id=?", arrayOf(id.toString()))
+        writableDatabase.update("watch_terms", cv, "id=? AND builtin=0", arrayOf(id.toString()))
+    }
+
+    fun setWatchTermPriority(id: Long, priority: String) {
+        val cv = ContentValues().apply { put("priority", priority) }
+        writableDatabase.update("watch_terms", cv, "id=? AND builtin=0", arrayOf(id.toString()))
     }
 
     fun listWatchTerms(onlyEnabled: Boolean = false): List<WatchTerm> {
         val out = ArrayList<WatchTerm>()
         val where = if (onlyEnabled) "enabled=1" else null
-        readableDatabase.query("watch_terms", null, where, null, null, null, "kind ASC, term ASC")
-            .use { cur ->
+        readableDatabase.query(
+            "watch_terms", null, where, null, null, null,
+            "CASE WHEN priority='PRIMARY' THEN 0 ELSE 1 END ASC, kind ASC, term ASC"
+        ).use { cur ->
                 while (cur.moveToNext()) {
                     out.add(
                         WatchTerm(
                             id = cur.getLong(cur.getColumnIndexOrThrow("id")),
                             term = cur.getString(cur.getColumnIndexOrThrow("term")),
                             kind = cur.getString(cur.getColumnIndexOrThrow("kind")),
-                            enabled = cur.getInt(cur.getColumnIndexOrThrow("enabled")) == 1
+                            enabled = cur.getInt(cur.getColumnIndexOrThrow("enabled")) == 1,
+                            priority = cur.getString(cur.getColumnIndexOrThrow("priority")),
+                            builtin = cur.getInt(cur.getColumnIndexOrThrow("builtin")) == 1
                         )
                     )
                 }
@@ -476,9 +930,217 @@ class Db private constructor(context: Context) :
         return out
     }
 
+    // ------------------------------------------------------------ pending files
+
+    fun addPendingFile(title: String, note: String, caseType: String = "", caseNo: String = "", caseYear: String = ""): Long {
+        val cv = ContentValues().apply {
+            put("title", title.trim())
+            put("note", note.trim())
+            put("added_at", System.currentTimeMillis())
+            put("case_type", caseType.trim())
+            put("case_no", caseNo.trim())
+            put("case_year", caseYear.trim())
+        }
+        return writableDatabase.insert("pending_files", null, cv)
+    }
+
+    fun deletePendingFile(id: Long) {
+        writableDatabase.delete("pending_files", "id=?", arrayOf(id.toString()))
+        // A removed pending file has nothing left to approve.
+        writableDatabase.delete("fixtures", "pending_id=?", arrayOf(id.toString()))
+    }
+
+    fun listPendingFiles(): List<PendingFile> {
+        val out = ArrayList<PendingFile>()
+        readableDatabase.query("pending_files", null, null, null, null, null, "added_at DESC")
+            .use { cur ->
+                while (cur.moveToNext()) {
+                    val typeIdx = cur.getColumnIndex("case_type")
+                    val noIdx = cur.getColumnIndex("case_no")
+                    val yrIdx = cur.getColumnIndex("case_year")
+                    out.add(
+                        PendingFile(
+                            id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+                            title = cur.getString(cur.getColumnIndexOrThrow("title")),
+                            note = cur.getString(cur.getColumnIndexOrThrow("note")),
+                            addedAt = cur.getLong(cur.getColumnIndexOrThrow("added_at")),
+                            caseType = if (typeIdx < 0) "" else cur.getString(typeIdx).orEmpty(),
+                            caseNo = if (noIdx < 0) "" else cur.getString(noIdx).orEmpty(),
+                            caseYear = if (yrIdx < 0) "" else cur.getString(yrIdx).orEmpty()
+                        )
+                    )
+                }
+            }
+        return out
+    }
+
+    // ------------------------------------------------------------------ tasks
+
+    fun addTask(t: LawTask): Long {
+        val cv = ContentValues().apply {
+            put("title", t.title)
+            put("assigned_by", t.assignedBy)
+            put("deadline", t.deadline)
+            put("done", if (t.done) 1 else 0)
+            put("done_at", t.doneAt)
+            put("created_at", if (t.createdAt == 0L) System.currentTimeMillis() else t.createdAt)
+        }
+        return writableDatabase.insert("law_tasks", null, cv)
+    }
+
+    fun setTaskDone(id: Long, done: Boolean) {
+        val cv = ContentValues().apply {
+            put("done", if (done) 1 else 0)
+            put("done_at", if (done) System.currentTimeMillis() else 0L)
+        }
+        writableDatabase.update("law_tasks", cv, "id=?", arrayOf(id.toString()))
+    }
+
+    fun deleteTask(id: Long) {
+        writableDatabase.delete("law_tasks", "id=?", arrayOf(id.toString()))
+    }
+
+    fun getTask(id: Long): LawTask? =
+        readableDatabase.query("law_tasks", null, "id=?", arrayOf(id.toString()), null, null, null)
+            .use { cur -> if (cur.moveToFirst()) readTask(cur) else null }
+
+    fun listTasks(): List<LawTask> {
+        val out = ArrayList<LawTask>()
+        readableDatabase.query("law_tasks", null, null, null, null, null, "deadline ASC").use { cur ->
+            while (cur.moveToNext()) out.add(readTask(cur))
+        }
+        return out
+    }
+
+    private fun readTask(cur: Cursor) = LawTask(
+        id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+        title = cur.getString(cur.getColumnIndexOrThrow("title")),
+        assignedBy = cur.getString(cur.getColumnIndexOrThrow("assigned_by")),
+        deadline = cur.getLong(cur.getColumnIndexOrThrow("deadline")),
+        done = cur.getInt(cur.getColumnIndexOrThrow("done")) == 1,
+        doneAt = cur.getLong(cur.getColumnIndexOrThrow("done_at")),
+        createdAt = cur.getLong(cur.getColumnIndexOrThrow("created_at"))
+    )
+
+    // ------------------------------------------------------------- fixed cases
+
+    fun addFixedCase(f: FixedCase): Long {
+        val cv = ContentValues().apply {
+            put("title_no", f.titleNo)
+            put("court", f.court)
+            put("prayer", f.prayer)
+            put("proceedings", f.proceedings)
+            put("causelist_no", f.causelistNo)
+            put("fixed_date", if (f.fixedDate == 0L) System.currentTimeMillis() else f.fixedDate)
+            put("source_raw", f.sourceRaw)
+            put("case_id", f.caseId)
+            put("judge", f.judge)
+            put("hearing_date", f.hearingDate)
+        }
+        return writableDatabase.insert("fixed_cases", null, cv)
+    }
+
+    /** Only the fields the edit dialog actually exposes — judge and hearing
+     *  date are set once at save time (see [addFixedCase]) and left alone
+     *  here so editing other fields can never silently blank them out. */
+    fun updateFixedCase(f: FixedCase) {
+        val cv = ContentValues().apply {
+            put("title_no", f.titleNo)
+            put("court", f.court)
+            put("prayer", f.prayer)
+            put("proceedings", f.proceedings)
+            put("causelist_no", f.causelistNo)
+        }
+        writableDatabase.update("fixed_cases", cv, "id=?", arrayOf(f.id.toString()))
+    }
+
+    fun deleteFixedCase(id: Long) {
+        writableDatabase.delete("fixed_cases", "id=?", arrayOf(id.toString()))
+    }
+
+    /** Case ids that already have a fixed-cases report entry — for the "✓ Fixed" badge on the Cases tab. */
+    fun fixedCaseIds(): Set<Long> {
+        val out = HashSet<Long>()
+        readableDatabase.rawQuery("SELECT DISTINCT case_id FROM fixed_cases WHERE case_id != 0", null)
+            .use { cur -> while (cur.moveToNext()) out.add(cur.getLong(0)) }
+        return out
+    }
+
+    fun listFixedCases(): List<FixedCase> {
+        val out = ArrayList<FixedCase>()
+        readableDatabase.query("fixed_cases", null, null, null, null, null, "fixed_date DESC, id DESC")
+            .use { cur ->
+                val judgeIdx = cur.getColumnIndex("judge")
+                val hearingIdx = cur.getColumnIndex("hearing_date")
+                while (cur.moveToNext()) {
+                    out.add(
+                        FixedCase(
+                            id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+                            titleNo = cur.getString(cur.getColumnIndexOrThrow("title_no")),
+                            court = cur.getString(cur.getColumnIndexOrThrow("court")),
+                            prayer = cur.getString(cur.getColumnIndexOrThrow("prayer")),
+                            proceedings = cur.getString(cur.getColumnIndexOrThrow("proceedings")),
+                            causelistNo = cur.getString(cur.getColumnIndexOrThrow("causelist_no")),
+                            fixedDate = cur.getLong(cur.getColumnIndexOrThrow("fixed_date")),
+                            sourceRaw = cur.getString(cur.getColumnIndexOrThrow("source_raw")),
+                            caseId = cur.getLong(cur.getColumnIndexOrThrow("case_id")),
+                            judge = if (judgeIdx < 0) "" else cur.getString(judgeIdx).orEmpty(),
+                            hearingDate = if (hearingIdx < 0) "" else cur.getString(hearingIdx).orEmpty()
+                        )
+                    )
+                }
+            }
+        return out
+    }
+
+    // -------------------------------------------------------------- scan rows
+
+    /** Every line seen in a scan, kept briefly so it can be searched later —
+     *  even rows that matched nothing (a judge's name, a serial number). */
+    fun insertScanRows(sourceLabel: String, rows: List<String>) {
+        if (rows.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (r in rows) {
+                val cv = ContentValues().apply {
+                    put("scanned_at", now)
+                    put("source_label", sourceLabel)
+                    put("row_text", if (r.length > 300) r.substring(0, 300) + "…" else r)
+                }
+                db.insert("scan_rows", null, cv)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Simple substring search (SQLite's LIKE is already case-insensitive for ASCII). */
+    fun searchScanRows(query: String, limit: Int = 50): List<Pair<String, Long>> {
+        val like = "%${query.trim()}%"
+        val out = ArrayList<Pair<String, Long>>()
+        readableDatabase.rawQuery(
+            "SELECT row_text, scanned_at FROM scan_rows WHERE row_text LIKE ? ORDER BY scanned_at DESC LIMIT ?",
+            arrayOf(like, limit.toString())
+        ).use { cur -> while (cur.moveToNext()) out.add(cur.getString(0) to cur.getLong(1)) }
+        return out
+    }
+
+    fun scanRowCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM scan_rows", null)
+            .use { cur -> if (cur.moveToFirst()) cur.getInt(0) else 0 }
+
+    /** Bounded to a few days — this is a search convenience, not a permanent archive. */
+    fun pruneScanRows(days: Int = 3) {
+        val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+        writableDatabase.delete("scan_rows", "scanned_at < ?", arrayOf(cutoff.toString()))
+    }
+
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 2
+        private const val VERSION = 8
 
         @Volatile
         private var instance: Db? = null

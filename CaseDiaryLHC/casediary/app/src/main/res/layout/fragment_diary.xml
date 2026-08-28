@@ -16,27 +16,45 @@
         app:layout_constraintEnd_toEndOf="parent">
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCheck"
+            android:id="@+id/btnBrowser"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/check_now"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_gavel" />
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
+            android:text="@string/open_browser"
+            android:textSize="14sp"
+            app:icon="@drawable/ic_web" />
+    </LinearLayout>
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="1dp" />
+    <LinearLayout
+        android:id="@+id/actions2"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        app:layout_constraintTop_toBottomOf="@id/actions"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBrowser"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:id="@+id/btnSearch"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/open_browser"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_web" />
+            android:text="@string/search_lists"
+            android:textSize="11sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnExportPdf"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/export_pdf"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <TextView
@@ -48,7 +66,54 @@
         android:paddingBottom="6dp"
         android:textSize="12sp"
         android:textColor="@color/text_secondary"
-        app:layout_constraintTop_toBottomOf="@id/actions"
+        app:layout_constraintTop_toBottomOf="@id/actions2"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <LinearLayout
+        android:id="@+id/selectionActions"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        app:layout_constraintTop_toBottomOf="@id/status"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSelectAll"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:text="Select all" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearSelected"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:textColor="@color/danger"
+            android:visibility="gone"
+            android:text="Clear selected" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSaveSelected"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="6dp"
+        android:textSize="12sp"
+        android:visibility="gone"
+        android:text="Save selected to My Cases"
+        app:layout_constraintTop_toBottomOf="@id/selectionActions"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
@@ -56,7 +121,7 @@
         android:id="@+id/swipe"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintTop_toBottomOf="@id/status"
+        app:layout_constraintTop_toBottomOf="@id/btnSaveSelected"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">

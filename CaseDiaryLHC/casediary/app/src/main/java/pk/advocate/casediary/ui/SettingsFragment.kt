@@ -13,9 +13,12 @@ import android.widget.Spinner
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
+import pk.advocate.casediary.BuildConfig
 import pk.advocate.casediary.R
 import pk.advocate.casediary.databinding.FragmentSettingsBinding
 import pk.advocate.casediary.databinding.ItemSourceBinding
@@ -24,6 +27,7 @@ import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Backup
 import pk.advocate.casediary.util.Dates
 import pk.advocate.casediary.util.Prefs
+import pk.advocate.casediary.util.UpdateChecker
 import pk.advocate.casediary.work.Scheduler
 
 class SettingsFragment : Fragment() {
@@ -88,6 +92,11 @@ class SettingsFragment : Fragment() {
             prefs.autoScanInBrowser = checked
         }
 
+        b.swPrincipalSeat.isChecked = prefs.principalSeatOnly
+        b.swPrincipalSeat.setOnCheckedChangeListener { _, checked ->
+            prefs.principalSeatOnly = checked
+        }
+
         b.btnMorning.setOnClickListener {
             pickTime(prefs.morningHour, prefs.morningMinute) { h, m ->
                 prefs.morningHour = h
@@ -110,6 +119,10 @@ class SettingsFragment : Fragment() {
         b.btnImport.setOnClickListener {
             importPicker.launch(arrayOf("application/json", "text/plain", "*/*"))
         }
+
+        b.versionText.text = "Causelist Checking & Management System (CCMS)\n" +
+            "Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
+        b.btnCheckUpdate.setOnClickListener { checkForUpdate() }
 
         renderTerms()
         renderSources()
@@ -141,7 +154,7 @@ class SettingsFragment : Fragment() {
 
     private fun renderTerms() {
         b.termChips.removeAllViews()
-        val terms = db.listWatchTerms()
+        val terms = db.listWatchTerms() // already sorted PRIMARY first
         if (terms.isEmpty()) {
             val chip = Chip(requireContext())
             chip.text = "No keywords yet"
@@ -151,16 +164,28 @@ class SettingsFragment : Fragment() {
         }
         for (t in terms) {
             val chip = Chip(requireContext())
-            chip.text = "${t.term}  ·  ${t.kind.lowercase()}"
-            chip.isCheckable = true
+            val star = if (t.priority == WatchTerm.PRIORITY_PRIMARY) "★ " else ""
+            val tag = if (t.builtin) "always on" else t.kind.lowercase()
+            chip.text = "$star${t.term}  ·  $tag"
+            chip.isCheckable = !t.builtin
             chip.isChecked = t.enabled
-            chip.isCloseIconVisible = true
-            chip.setOnCheckedChangeListener { _, checked ->
-                db.setWatchTermEnabled(t.id, checked)
-            }
-            chip.setOnCloseIconClickListener {
-                db.deleteWatchTerm(t.id)
-                renderTerms()
+            chip.isCloseIconVisible = !t.builtin
+            if (!t.builtin) {
+                chip.setOnCheckedChangeListener { _, checked ->
+                    db.setWatchTermEnabled(t.id, checked)
+                }
+                chip.setOnCloseIconClickListener {
+                    db.deleteWatchTerm(t.id)
+                    renderTerms()
+                }
+                chip.setOnLongClickListener {
+                    db.setWatchTermPriority(
+                        t.id,
+                        if (t.priority == WatchTerm.PRIORITY_PRIMARY) WatchTerm.PRIORITY_OTHER else WatchTerm.PRIORITY_PRIMARY
+                    )
+                    renderTerms()
+                    true
+                }
             }
             b.termChips.addView(chip)
         }
@@ -188,12 +213,16 @@ class SettingsFragment : Fragment() {
             kinds.map { it.second }
         )
 
+        val primaryCheck = com.google.android.material.checkbox.MaterialCheckBox(requireContext())
+        primaryCheck.text = "Primary keyword — flagged first, treated as high priority"
+
         container.addView(input)
         container.addView(spinner)
+        container.addView(primaryCheck)
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.add_keyword)
-            .setMessage("Matching ignores case, spacing and punctuation, so \"Ahmad Raza\" also finds \"RAZA, AHMAD\".")
+            .setMessage("Matching ignores case, spacing and punctuation, so \"Ahmad Raza\" also finds \"RAZA, AHMAD\". Long-press a keyword chip any time to toggle its priority.")
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
                 val text = input.text?.toString()?.trim().orEmpty()
@@ -202,7 +231,8 @@ class SettingsFragment : Fragment() {
                     return@setPositiveButton
                 }
                 val kind = kinds[spinner.selectedItemPosition].first
-                db.addWatchTerm(text, kind)
+                val priority = if (primaryCheck.isChecked) WatchTerm.PRIORITY_PRIMARY else WatchTerm.PRIORITY_OTHER
+                db.addWatchTerm(text, kind, priority)
                 renderTerms()
             }
             .setNegativeButton(R.string.cancel, null)
@@ -258,6 +288,22 @@ class SettingsFragment : Fragment() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun checkForUpdate() {
+        b.updateStatus.text = "Checking…"
+        viewLifecycleOwner.lifecycleScope.launch {
+            val info = UpdateChecker.fetchLatest()
+            if (_b == null) return@launch
+            when {
+                info == null -> b.updateStatus.text = "Could not check for updates — try again later."
+                UpdateChecker.isNewer(info) -> {
+                    b.updateStatus.text = "Update available: ${info.versionName}"
+                    UpdateChecker.promptInstall(requireContext(), viewLifecycleOwner.lifecycleScope, b.root, info)
+                }
+                else -> b.updateStatus.text = "You're on the latest version."
+            }
+        }
     }
 
     private fun exportBackup() {

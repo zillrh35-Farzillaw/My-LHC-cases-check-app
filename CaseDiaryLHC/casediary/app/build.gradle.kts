@@ -7,12 +7,37 @@ android {
     namespace = "pk.advocate.casediary"
     compileSdk = 34
 
+    // CI passes the workflow run number so every build is a strictly higher
+    // versionCode than the last, and the in-app update checker (see
+    // util/UpdateChecker.kt) can tell a newer release apart from the one
+    // that's installed. Local/manual builds fall back to a fixed dev version.
+    val ciVersionCode = System.getenv("APP_VERSION_CODE")?.toIntOrNull() ?: 1
+    val ciVersionName = System.getenv("APP_VERSION_NAME") ?: "1.0-dev"
+
     defaultConfig {
         applicationId = "pk.advocate.casediary"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = ciVersionCode
+        versionName = ciVersionName
+        buildConfigField("String", "GITHUB_REPO", "\"zillrh35-Farzillaw/My-LHC-cases-check-app\"")
+    }
+
+    // A fresh CI runner has no ~/.android/debug.keystore, so Gradle's default
+    // behaviour is to auto-generate a brand-new one — with a brand-new random
+    // key — on every single build. Every APK would then carry a different
+    // signature, and Android refuses to install one app "over" another
+    // signed with a different key ("package conflicts with an existing
+    // package"), which defeats the whole point of the in-app update checker.
+    // Signing every build with this one committed keystore instead keeps the
+    // signature identical release after release, so updates install in place.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -22,6 +47,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -36,6 +62,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     packaging {

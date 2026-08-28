@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F5132">
-<title>Case Diary — LHC</title>
+<title>CCMS — Causelist Checking &amp; Management System</title>
 <style>
   :root{
     --brand:#0F5132; --brand-dark:#0A3B24; --brand-light:#D7EADF;
@@ -77,18 +77,44 @@
     padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:12px}
   .okbox{background:var(--brand-light);border:1px solid #B9D8C6;color:var(--brand-dark);
     border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
-  .stat{display:flex;gap:8px;margin-bottom:12px}
-  .stat div{flex:1;background:#fff;border:1px solid var(--line);border-radius:12px;
+  .stat{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .stat div{flex:1 1 45%;background:#fff;border:1px solid var(--line);border-radius:12px;
     padding:10px;text-align:center}
   .stat b{display:block;font-size:20px;color:var(--brand)}
   .stat span{font-size:11px;color:var(--muted)}
   .hidden{display:none!important}
+  .rmv{cursor:pointer;color:var(--muted);font-size:11px;text-decoration:underline}
+  .rmv:active{color:var(--danger)}
+  .tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .tbl th{text-align:left;color:var(--muted);font-weight:600;padding:6px 4px;border-bottom:1px solid var(--line)}
+  .tbl td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tblwrap{overflow-x:auto}
+  #printReport{display:none}
+  .switch{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .switch .slider{position:absolute;inset:0;background:#d3d6d4;border-radius:999px;
+    transition:background .15s;cursor:pointer}
+  .switch .slider::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;
+    background:#fff;border-radius:50%;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .switch input:checked + .slider{background:var(--brand)}
+  .switch input:checked + .slider::before{transform:translateX(16px)}
+  @media print{
+    header, .tabs, .modal, main > section{display:none !important}
+    #printReport{display:block !important;padding:16px;color:#000}
+    #printReport table{width:100%;border-collapse:collapse;margin-top:10px}
+    #printReport th,#printReport td{border:1px solid #000;padding:6px;font-size:11px;text-align:left;vertical-align:top}
+    #printReport h1{font-size:16px;text-align:center;margin-bottom:4px}
+    #printReport .fixedFor{text-align:center;font-weight:700;margin:14px 0}
+    #printReport h2{font-size:13px;margin-top:18px}
+    #printReport ul{margin:6px 0;padding-left:20px;font-size:12px}
+    #printReport .note{font-size:10px;color:#333}
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1 id="hTitle">Case Diary</h1>
+  <h1 id="hTitle">CCMS</h1>
   <div class="sub" id="hSub">Lahore High Court</div>
 </header>
 
@@ -109,7 +135,8 @@
   <!-- ============================ DIARY ============================ -->
   <section id="tab-diary" class="hidden">
     <div class="stat">
-      <div><b id="stMine">0</b><span>my cases fixed</span></div>
+      <div><b id="stFixed">0</b><span>fixed cases</span></div>
+      <div><b id="stApproval">0</b><span>need approval</span></div>
       <div><b id="stOther">0</b><span>other matches</span></div>
       <div><b id="stSoon">0</b><span>hearings ≤14d</span></div>
     </div>
@@ -125,6 +152,10 @@
       </button>
       <textarea id="paste" style="margin-top:8px"
         placeholder="Paste the cause list text here…"></textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <input type="checkbox" id="principalSeatOnly" style="width:auto" onchange="togglePrincipalSeatOnly()">
+        Only check Principal Seat (Lahore) — skip Bahawalpur / Multan / Rawalpindi bench listings
+      </label>
       <div class="row" style="margin-top:8px">
         <button class="btn" onclick="scanPaste()">Scan for my keywords</button>
         <button class="btn3" onclick="document.getElementById('paste').value=''">Clear</button>
@@ -132,7 +163,64 @@
       <div id="scanResult"></div>
     </div>
 
+    <div class="card">
+      <b style="font-size:14px">Search checked lists</b>
+      <div class="note">
+        Look up any name, judge, serial number or case number across every
+        cause list you've already scanned — even if it isn't one of your keywords.
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="lhcSearch" placeholder="Name, judge, Sr No., case no…">
+        <button class="btn3" onclick="searchScans()">Search</button>
+      </div>
+      <div id="lhcSearchResult"></div>
+    </div>
+
     <div id="diaryList"></div>
+  </section>
+
+  <!-- ============================ PENDING =========================== -->
+  <section id="tab-pending" class="hidden">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px">
+        <b style="font-size:14px;flex:1">Check pending files automatically</b>
+        <label class="switch" style="margin:0">
+          <input type="checkbox" id="pendingSectionEnabled" onchange="togglePendingSection()">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="note">
+        When on, every pending file below is checked against each cause list you
+        scan. Turn this off to pause fuzzy-matching for the whole list at once —
+        for example while you're cleaning it up — without deleting anything.
+      </div>
+    </div>
+    <div class="card">
+      <b style="font-size:14px">Add a pending file</b>
+      <div class="note">
+        A case whose file you already hold but that has not been fixed (listed)
+        yet. Once added, it is checked on every scan using fuzzy name matching —
+        so spelling or ordering differences in the court's printing won't cause
+        it to be missed. When it appears, you'll be asked to approve the match
+        before it moves into your fixed-cases report.
+      </div>
+      <label>Case title</label>
+      <input id="newPending" placeholder="e.g. Ghazanfar Ali Khan vs NADRA etc." autocomplete="off">
+      <div class="note" style="margin-top:8px">
+        Case number (optional) — add it once the file has been registered, even
+        before it's fixed. Matching then also catches the exact case number,
+        alongside the usual fuzzy name match.
+      </div>
+      <div class="row">
+        <div><label>Type</label><input id="newPendingType" placeholder="W.P."></div>
+        <div><label>Number</label><input id="newPendingNo" placeholder="12345"></div>
+        <div><label>Year</label><input id="newPendingYear" placeholder="2026" inputmode="numeric"></div>
+      </div>
+      <label>Note (optional)</label>
+      <input id="newPendingNote" placeholder="e.g. important, might fix in future" autocomplete="off">
+      <button class="btn2" style="width:100%;margin-top:10px" onclick="addPending()">Add pending file</button>
+    </div>
+    <div id="pendingList"></div>
   </section>
 
   <!-- ========================== KEYWORDS =========================== -->
@@ -143,6 +231,9 @@
         Your name as it is printed in the cause list, party names, case numbers.
         Matching ignores case, spacing and punctuation, so <b>Ahmad Raza</b> also
         finds <b>RAZA, AHMAD</b>. Add a second spelling if yours varies.
+        <b>NADRA, National Database, Identity Card and Citizenship</b> are
+        watched by default — they're locked on since these matters must always
+        be flagged.
       </div>
       <div class="chips" id="keyChips"></div>
       <label>New keyword</label>
@@ -154,8 +245,33 @@
         <option value="CASE">Case number</option>
         <option value="OTHER">Other</option>
       </select>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
+        <input type="checkbox" id="newKeyPrimary" style="width:auto">
+        Primary keyword — flagged first, treated as high priority
+      </label>
       <button class="btn2" style="width:100%;margin-top:10px" onclick="addKey()">Add keyword</button>
     </div>
+  </section>
+
+  <!-- ============================ TASKS ============================ -->
+  <section id="tab-tasks" class="hidden">
+    <div id="taskAlerts"></div>
+    <div class="card">
+      <b style="font-size:14px">Add a task</b>
+      <div class="note">
+        Something a senior or officer told you to do, with a deadline — so it never
+        slips through. You'll see an overdue/due-soon warning here whenever you open
+        the app; the Android app can also alert you at the deadline even if it's closed.
+      </div>
+      <label>What needs to be done</label>
+      <textarea id="newTaskTitle" placeholder="e.g. File reply to show-cause notice"></textarea>
+      <label>Assigned by (optional)</label>
+      <input id="newTaskAssignedBy" placeholder="e.g. Senior Advocate / District Officer" autocomplete="off">
+      <label>Deadline</label>
+      <input type="datetime-local" id="newTaskDeadline">
+      <button class="btn2" style="width:100%;margin-top:10px" onclick="addTask()">Add task</button>
+    </div>
+    <div id="taskList"></div>
   </section>
 
   <!-- ============================ BACKUP =========================== -->
@@ -186,25 +302,32 @@
         the list in. The Android APK does that part automatically.
       </div>
     </div>
+    <div class="card">
+      <b style="font-size:14px">About</b>
+      <div class="note">CCMS — Causelist Checking &amp; Management System</div>
+    </div>
   </section>
 </main>
 
 <nav class="tabs">
   <button data-t="cases" class="on"><svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>Cases</button>
   <button data-t="diary"><svg viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V9h14v10zM7 11h5v5H7z"/></svg>Diary</button>
+  <button data-t="pending"><svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/></svg>Pending</button>
   <button data-t="keys"><svg viewBox="0 0 24 24"><path d="M12.65 10A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H17v4h4v-4h2v-4H12.65zM7 14a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>Keywords</button>
+  <button data-t="tasks"><svg viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-2 14-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z"/></svg>Tasks</button>
   <button data-t="backup"><svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>Backup</button>
 </nav>
 
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<div id="printReport"></div>
 
 <script>
 "use strict";
 
 /* ------------------------------------------------------------------ store */
 const KEY = "casediary.v1";
-const blank = { cases: [], keys: [], hits: [], seq: 1 };
-let S = load();
+const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [], tasks: [],
+  settings: { principalSeatOnly: true, pendingFilesEnabled: true }, seq: 1 };
 
 function load(){
   try{
@@ -225,6 +348,90 @@ function save(){
   }
 }
 const nextId = () => S.seq++;
+
+/* These are always watched, regardless of what the lawyer adds — NADRA and
+   citizenship/identity-card matters must never be missed. Locked, not deletable,
+   always PRIMARY priority. */
+const DEFAULT_KEYWORDS = [
+  {term:"NADRA", kind:"OTHER"},
+  {term:"National Database", kind:"OTHER"},
+  {term:"Identity Card", kind:"OTHER"},
+  {term:"Citizenship", kind:"OTHER"},
+  {term:"Munir Afsar", kind:"ADVOCATE"},
+  {term:"Ashba Kamran", kind:"ADVOCATE"},
+  {term:"Fizza Shahid", kind:"ADVOCATE"},
+  {term:"Fiza Shahid", kind:"ADVOCATE"},
+];
+function seedDefaultKeywords(){
+  const have = new Set(S.keys.map(k=>normalize(k.term)));
+  let changed = false;
+  for(const d of DEFAULT_KEYWORDS){
+    if(!have.has(normalize(d.term))){
+      S.keys.push({id:nextId(), term:d.term, kind:d.kind, enabled:true, builtin:true, priority:"PRIMARY"});
+      changed = true;
+    }
+  }
+  // Fix up keywords seeded by an older version of the app that predates priority tiers.
+  for(const k of S.keys){
+    if(k.builtin && k.priority !== "PRIMARY"){ k.priority = "PRIMARY"; changed = true; }
+  }
+  return changed;
+}
+
+/* Pending files used to be seeded here from a client-name list supplied
+   early on. That data has been removed from source — this repo is public,
+   and real client/party names have no business sitting in public source
+   code. Nothing already saved on a phone is affected (it lives in that
+   phone's local storage, not here); a brand-new install just starts with
+   an empty Pending Files list, same as Cases and Keywords always have. */
+const DEFAULT_PENDING = [];
+function seedDefaultPending(){
+  const have = new Set(S.pending.map(p=>normalize(p.title)));
+  let changed = false;
+  for(const d of DEFAULT_PENDING){
+    if(!have.has(normalize(d.title))){
+      S.pending.push({id:nextId(), title:d.title, note:d.note||"", addedAt:Date.now()});
+      have.add(normalize(d.title));
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/* Consolidates hits recorded by an older version of the app, where the same
+   cause-list row was stored once per matching keyword instead of once per
+   row. Groups by (source + row text) and merges every matched term into one
+   entry, so a case hit by several keywords is never listed more than once. */
+function migrateHits(){
+  if(!S.hits.some(h=>!h.terms)) return false;
+  const bySig = new Map();
+  for(const h of S.hits){
+    const terms = h.terms || [{term:h.term, kind:h.kind}];
+    const sig = (h.source||"") + "|" + normalize(h.raw||"");
+    const ex = bySig.get(sig);
+    if(ex){
+      for(const t of terms){
+        if(!ex.terms.some(et=>normalize(et.term)===normalize(t.term))) ex.terms.push(t);
+      }
+      if(h.caseId) ex.caseId = h.caseId;
+      if(h.pendingId && !ex.caseId) ex.pendingId = h.pendingId;
+      ex.foundAt = Math.max(ex.foundAt, h.foundAt||0);
+    } else {
+      bySig.set(sig, {
+        hash: hashOf(["paste", h.raw||""]), terms: terms.slice(),
+        caseId: h.caseId||0, pendingId: h.pendingId||0,
+        source: h.source, raw: h.raw, foundAt: h.foundAt||0
+      });
+    }
+  }
+  S.hits = [...bySig.values()].sort((a,b)=>b.foundAt-a.foundAt);
+  return true;
+}
+
+let S = load();
+if(seedDefaultKeywords()) save();
+if(seedDefaultPending()) save();
+if(migrateHits()) save();
 
 /* ---------------------------------------------------------------- matcher */
 /* Mirrors the Kotlin matcher in the Android build, same rules and outcomes. */
@@ -259,51 +466,220 @@ function caseTitle(c){
   if(p && r) return p + " vs. " + r;
   return p || r || "(untitled)";
 }
+/* Pending-file titles are matched exactly: a title's own stopwords ("vs",
+   "etc", honorifics) are dropped before comparing, but every remaining word
+   must actually appear in the row — no tolerance for a missing word. */
+const STOPWORDS = new Set(["vs","etc","and","the","of","in","re","mst"]);
+function pendingTokens(title){
+  return normalize(title).split(" ").filter(t => t.length >= 3 && !STOPWORDS.has(t));
+}
+
 /* Tokenise every keyword once per scan, not once per row. */
-function compile(keys, cases){
+function compile(keys, cases, pending){
   const probes = [];
   for(const k of keys){
     if(k.enabled === false) continue;
     const t = usableTokens(k.term);
-    if(t) probes.push({label:k.term, kind:k.kind, caseId:0, tokens:t, key:normalize(k.term)});
+    if(t) probes.push({label:k.term, kind:k.kind, caseId:0, pendingId:0, tokens:t, key:"key:"+normalize(k.term), fuzzy:false});
   }
   for(const c of cases){
     if(c.status === "ARCHIVED") continue;
+    if(c.watched === false) continue;
     const ref = caseRef(c);
     if(c.caseNo && c.caseYear){
       const t = usableTokens(c.caseNo + " " + c.caseYear);
-      if(t) probes.push({label:ref, kind:"CASE", caseId:c.id, tokens:t, key:normalize(ref)});
+      if(t) probes.push({label:ref, kind:"CASE", caseId:c.id, pendingId:0, tokens:t, key:"case:"+normalize(ref), fuzzy:false});
     }
     const party = (c.petitioner||"").trim();
     if(party.length >= 4){
       const t = usableTokens(party);
       if(t){
         const label = ref || party;
-        probes.push({label, kind:"PARTY", caseId:c.id, tokens:t, key:normalize(label)});
+        probes.push({label, kind:"PARTY", caseId:c.id, pendingId:0, tokens:t, key:"party:"+normalize(label), fuzzy:false});
+      }
+    }
+  }
+  /* No fuzzy tolerance: a pending file only lists as a hit when every one of
+     its (stopword-stripped) title words is actually present in the row —
+     no "possible match" guesswork, an exact title match only. */
+  const pendingList = (S.settings.pendingFilesEnabled === false) ? [] : (pending || []);
+  for(const pf of pendingList){
+    const t = pendingTokens(pf.title);
+    if(!t.length) continue;
+    probes.push({label:pf.title, kind:"PENDING", caseId:0, pendingId:pf.id, tokens:t,
+      key:"pending:"+pf.id, fuzzy:false});
+    // Once a pending file's case number is known (registered but not yet
+    // fixed), match it exactly too — precise, alongside the fuzzy title match.
+    if(pf.caseNo && pf.caseYear){
+      const numToks = usableTokens(pf.caseNo + " " + pf.caseYear);
+      if(numToks){
+        const ref = [pf.caseType, pf.caseNo].filter(Boolean).join(" ").trim() + "/" + pf.caseYear;
+        probes.push({label:ref, kind:"CASE", caseId:0, pendingId:pf.id, tokens:numToks,
+          key:"pendingcase:"+pf.id, fuzzy:false});
       }
     }
   }
   return probes;
 }
 /* Word-level, not substring: "Ali" must not match "Salim".
-   Tokens of 6+ characters may also match inside a run-together word. */
+   Tokens of 6+ characters may also match inside a run-together word.
+   Every probe (keywords, case numbers, saved-case parties, pending files)
+   requires every one of its tokens to be present — an exact match only. */
 function findHits(row, probes){
   if(!probes.length) return [];
   const norm = normalize(row);
   if(norm.length < 6) return [];
   const set = new Set(norm.split(" ").filter(Boolean));
+  const present = t => set.has(t) || (t.length >= 6 && norm.indexOf(t) !== -1);
   const out = new Map();
   for(const p of probes){
-    let ok = true;
-    for(const t of p.tokens){
-      if(set.has(t)) continue;
-      if(t.length >= 6 && norm.indexOf(t) !== -1) continue;
-      ok = false; break;
-    }
-    if(ok && !out.has(p.key)) out.set(p.key, {term:p.label, kind:p.kind, caseId:p.caseId});
+    const ok = p.tokens.every(present);
+    if(ok && !out.has(p.key)) out.set(p.key, {term:p.label, kind:p.kind, caseId:p.caseId, pendingId:p.pendingId||0});
   }
   return [...out.values()];
 }
+/* Circuit-bench listings (Bahawalpur / Multan / Rawalpindi) are printed in
+   the same cause list as Principal Seat (Lahore) cases. Toggle in the Diary
+   tab — on by default, since most practices here only run at Lahore. */
+/* Circuit-bench (Bahawalpur/Multan/Rawalpindi) rows print their case number
+   wrapped in square brackets, HYPHEN-delimited — "[6458-B-26]" or
+   "[10060-26]" — confirmed against a real LHC export; Principal Seat
+   (Lahore) rows never use brackets. That's a far more reliable signal than
+   the bench name showing up in the text, so it's checked first. Also used
+   for own/parent case-ref extraction — see BRACKET_CORE below. */
+/* Whitespace-tolerant around every delimiter: the app's own HTML parser
+   (jsoup) can join a bracket's sub-elements with spaces even when a plain
+   page-to-text copy shows none — "[ 6458 - B - 26 ]" must still match. */
+const BRACKET_CORE = "\\[\\s*(\\d{2,7})\\s*(?:-\\s*[A-Za-z]{1,4}\\s*)?-\\s*(\\d{2,4})\\s*\\]";
+const BRACKET_CORE_NC = "\\[\\s*\\d{2,7}\\s*(?:-\\s*[A-Za-z]{1,4}\\s*)?-\\s*\\d{2,4}\\s*\\]";
+const BRACKETED_CASE_RE = new RegExp(BRACKET_CORE);
+function isOtherBench(row){
+  if(BRACKETED_CASE_RE.test(row)) return true;
+  return /\b(bahawalpur|multan|rawalpindi)\b/i.test(row);
+}
+
+/* A C.M./C.M.A./Crl.M.A. row is a miscellaneous application filed IN a main
+   case — the cause list often prints it as its own line, right alongside
+   (or instead of) the main case's own line. It is the same matter, so it
+   must never be listed as a separate result: if the main case itself also
+   turns up in this same scan, the C.M. line is dropped; if the main case
+   never turns up on its own, at most one C.M. line for it is kept, standing
+   in for the whole group.
+
+   Confirmed against a real LHC "Urgent Cause List" export, the court prints
+   a C.M./application's parent case three different ways depending on bench:
+   - Lahore Principal Seat main rows print a BARE "number/year" with no case-
+     type text next to it at all (the type lives in a separate "category"
+     column) — e.g. Case# "48064/26" for the main case, and its C.M. as a
+     third segment folded into the C.M.'s own number, "CM/1/48064/26"
+     (application-no/main-no/year, no "in" at all). The C.M. row is also
+     prefixed by a repeated "and"/category before "CM" ever appears, so
+     detecting it must not require "CM" to be at the very start of the row.
+   - Circuit-bench rows (Multan/Bahawalpur/Rawalpindi) use bracketed,
+     HYPHEN-delimited numbers instead of slashes — "[6458-B-26]" or
+     "[10060-26]" — and spell the parent out as "[childNo] in [parentNo]".
+     A page-to-text copy (or a WebView's innerText) can split that "in"
+     across its own line when the table cell itself wraps, so the row list
+     is re-joined (see mergeSplitCmLines) before any of this runs. */
+const CASE_TYPE_ALT =
+  "W\\.?\\s*P\\.?|Crl\\.?\\s*Misc\\.?|C\\.?\\s*R\\.?|R\\.?\\s*F\\.?\\s*A\\.?|" +
+  "I\\.?\\s*C\\.?\\s*A\\.?|F\\.?\\s*A\\.?\\s*O\\.?|Crl\\.?\\s*A\\.?|C\\.?\\s*A\\.?";
+const CM_DESIGNATION = "(?:C\\.?\\s*M\\.?\\s*A?\\.?|Crl\\.?\\s*M\\.?\\s*A\\.?)";
+/* The gap between the designation and its number varies: "C.M.No.11/2026"
+   (word "No." then number), but the real, confirmed Lahore form is simply
+   "CM/1/48064/26" — no "No.", the designation is followed immediately by a
+   slash. This gap allows either. Not anchored to the start of the row either:
+   real rows prefix the C.M.'s own entry with a repeated "and"/category
+   before the "CM" text ever appears. */
+const CM_GAP = "\\s*/?\\s*(?:No\\.?)?\\s*/?\\s*";
+const CM_LEAD_RE = new RegExp(
+  "\\b" + CM_DESIGNATION + CM_GAP + "\\d+(?:\\s*/\\s*\\d+){1,2}\\b", "i"
+);
+const OWN_REF_RE = new RegExp("\\b(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
+const CM_PARENT_RE = new RegExp("\\bin\\s+(" + CASE_TYPE_ALT + ")\\s*(?:No\\.?)?\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i");
+const CM_EMBEDDED_PARENT_RE = new RegExp(
+  CM_DESIGNATION + CM_GAP + "\\d+\\s*/\\s*(\\d+)\\s*/\\s*(\\d{2,4})\\b", "i"
+);
+/* Lahore main-case rows with no case-type text next to the number at all —
+   the fallback once OWN_REF_RE (which requires a type word) comes up empty. */
+const BARE_CASE_NO_RE = /\b(\d{2,7})\s*\/\s*(\d{2,4})\b/;
+/* A circuit-bench C.M./sub-application spells its parent out as
+   "[childNo] in [parentNo]" instead of folding it into its own number. */
+const BRACKET_CM_RE = new RegExp(BRACKET_CORE_NC + "\\s*in\\s*" + BRACKET_CORE, "i");
+
+function canonicalCaseRef(m){
+  const type = m[1].replace(/[^a-z]/gi, "").toUpperCase();
+  const no = m[2].replace(/^0+(?=\d)/, "");
+  const yr = m[3].length === 2 ? "20" + m[3] : m[3];
+  return type + ":" + no + ":" + yr;
+}
+/* Type-agnostic identity: used whenever the parent's own case-type text
+   isn't printed (the embedded C.M.No.<app>/<main>/<year> form, a bare
+   Lahore number/year, or a circuit-bench bracketed number), so a plain
+   number+year is the only thing to match on. */
+function looseCaseRef(no, yr){
+  const n = no.replace(/^0+(?=\d)/, "");
+  const y = yr.length === 2 ? "20" + yr : yr;
+  return "*:" + n + ":" + y;
+}
+function isCmRow(row){ return CM_LEAD_RE.test(row) || BRACKET_CM_RE.test(row); }
+function ownCaseRefs(row){
+  const m = row.match(OWN_REF_RE);
+  if(m) return [canonicalCaseRef(m), looseCaseRef(m[2], m[3])];
+  const bare = row.match(BARE_CASE_NO_RE);
+  if(bare) return [looseCaseRef(bare[1], bare[2])];
+  const br = row.match(BRACKETED_CASE_RE);
+  if(br) return [looseCaseRef(br[1], br[2])];
+  return [];
+}
+function cmParentRefs(row){
+  const out = [];
+  const m1 = row.match(CM_PARENT_RE);
+  if(m1) out.push(canonicalCaseRef(m1), looseCaseRef(m1[2], m1[3]));
+  const m2 = row.match(CM_EMBEDDED_PARENT_RE);
+  if(m2) out.push(looseCaseRef(m2[1], m2[2]));
+  const m3 = row.match(BRACKET_CM_RE);
+  if(m3) out.push(looseCaseRef(m3[1], m3[2]));
+  return out;
+}
+const JUDGE_RE = /^(the chief justice|(?:mr\.?|mrs\.?|ms\.?)?\s*justice\s+[a-z][a-z .'-]*)$/i;
+const BENCH_HEADER_RE = /\b(single bench|divisional bench|division bench|daily single bench)\b/i;
+const DATE_LINE_RE = /^\d{1,2}-\d{1,2}-\d{4}$/;
+/* True for a line that starts a new cause-list section (a date, or a
+   bench-type header) — the point at which a previously tracked judge
+   (see extractJudge) no longer applies. */
+function isSectionReset(line){
+  const t = line.trim();
+  return BENCH_HEADER_RE.test(t) || DATE_LINE_RE.test(t);
+}
+/* Pulls a presiding judge's name out of a line that is *only* that
+   designation — e.g. "Mr. Justice Khalid Ishaq" or "The Chief Justice". The
+   cause list prints this once per bench section, never per case row
+   (confirmed against a real LHC export), so callers track it across
+   consecutive rows — see scanPaste(). */
+function extractJudge(line){
+  const m = line.trim().match(JUDGE_RE);
+  return m ? m[1].replace(/\s+/g," ").trim() : null;
+}
+/* A table cell that wraps across lines (a C.M.'s "childNo" / "in" / "parentNo"
+   cross-reference) can arrive as separate physical lines from a page-to-text
+   copy or a WebView's innerText. A line that is *only* the word "in" is never
+   real case text on its own, so it's stitched back onto its neighbours to
+   restore the original "in" phrase before anything else runs. */
+function mergeSplitCmLines(rows){
+  const out = [];
+  for(let i = 0; i < rows.length; i++){
+    const r = rows[i];
+    if(r.trim().toLowerCase() === "in" && out.length && i + 1 < rows.length){
+      out[out.length - 1] = out[out.length - 1] + " in " + rows[i + 1];
+      i++;
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+}
+
 function hashOf(parts){
   const joined = parts.map(normalize).join("|");
   let h = 5381;
@@ -336,20 +712,30 @@ function toInput(ms){ if(!ms) return ""; const d=new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function fromInput(v){ if(!v) return 0; const [y,m,d]=v.split("-").map(Number);
   return new Date(y, m-1, d, 10, 0, 0, 0).getTime(); }
+function fromDateTimeInput(v){
+  if(!v) return 0;
+  const [datePart, timePart] = v.split("T");
+  const [y,m,d] = datePart.split("-").map(Number);
+  const [hh,mm] = (timePart||"09:00").split(":").map(Number);
+  return new Date(y, m-1, d, hh||0, mm||0, 0, 0).getTime();
+}
+function fmtDateTime(ms){ if(!ms) return "—"; const d=new Date(ms);
+  return fmtDay(ms) + ", " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); }
 
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
+const TABS = ["cases","diary","pending","keys","tasks","backup"];
+const TAB_TITLES = {cases:"CCMS", diary:"Diary", pending:"Pending Files", keys:"Keywords", tasks:"Tasks", backup:"Backup"};
+function switchTab(name){
+  tab = name;
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));
+  TABS.forEach(t=> document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
+  document.getElementById("hTitle").textContent = TAB_TITLES[tab];
+  render();
+  window.scrollTo(0,0);
+}
 document.querySelectorAll(".tabs button").forEach(b=>{
-  b.onclick = ()=>{
-    tab = b.dataset.t;
-    document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x===b));
-    ["cases","diary","keys","backup"].forEach(t=>
-      document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
-    document.getElementById("hTitle").textContent =
-      {cases:"Case Diary", diary:"Diary", keys:"Keywords", backup:"Backup"}[tab];
-    render();
-    window.scrollTo(0,0);
-  };
+  b.onclick = ()=> switchTab(b.dataset.t);
 });
 document.querySelectorAll(".filters button").forEach(b=>{
   b.onclick = ()=>{
@@ -369,9 +755,11 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, m =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 
 function render(){
-  if(tab === "cases") renderCases();
-  if(tab === "diary") renderDiary();
-  if(tab === "keys")  renderKeys();
+  if(tab === "cases")   renderCases();
+  if(tab === "diary")   renderDiary();
+  if(tab === "pending") renderPending();
+  if(tab === "keys")    renderKeys();
+  if(tab === "tasks")   renderTasks();
   document.getElementById("hSub").textContent =
     S.cases.filter(c=>c.status==="ACTIVE").length + " active cases · offline";
 }
@@ -394,6 +782,7 @@ function renderCases(){
     el.innerHTML = `<div class="empty">No cases here yet.<br>Tap “Add case” to start.</div>`;
     return;
   }
+  const fixedByCaseId = new Set(S.fixed.map(f=>f.caseId).filter(Boolean));
   el.innerHTML = list.map(c=>{
     const bits = [c.court, c.judge, c.stage, c.clientName && "Client: "+c.clientName]
       .filter(Boolean).map(esc).join(" · ");
@@ -401,41 +790,142 @@ function renderCases(){
       <div class="ref">${esc(caseRef(c) || "(no case number)")}</div>
       <div class="ttl">${esc(caseTitle(c))}</div>
       ${bits ? `<div class="meta">${bits}</div>` : ""}
-      ${c.nextDate ? `<span class="pill">${esc(relLabel(c.nextDate))} · ${esc(fmt(c.nextDate))}</span>` : ""}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${c.nextDate ? `<span class="pill">${esc(relLabel(c.nextDate))} · ${esc(fmt(c.nextDate))}</span>` : ""}
+        ${fixedByCaseId.has(c.id) ? `<span class="pill" style="background:var(--brand);color:#fff">✓ Fixed in cause list</span>` : ""}
+        ${c.watched === false ? `<span class="pill warn">Not auto-checked</span>` : ""}
+      </div>
     </div>`;
   }).join("");
 }
 
+/* Transient (not saved) selection state for bulk actions. */
+let selectedHits = new Set();
+
+function togglePrincipalSeatOnly(){
+  S.settings.principalSeatOnly = document.getElementById("principalSeatOnly").checked;
+  save();
+}
+
 function renderDiary(){
-  const mine   = S.hits.filter(h=>h.caseId);
-  const others = S.hits.filter(h=>!h.caseId);
+  document.getElementById("principalSeatOnly").checked = S.settings.principalSeatOnly !== false;
+  const approval = S.hits.filter(h=>h.pendingId);
+  const mine     = S.hits.filter(h=>h.caseId && !h.pendingId);
+  const others   = S.hits.filter(h=>!h.caseId && !h.pendingId);
   const from = todayStart(), to = plusDays(from, 14);
   const soon = S.cases.filter(c=>c.status==="ACTIVE" && c.nextDate>=from && c.nextDate<=to)
                       .sort((a,b)=>a.nextDate-b.nextDate);
 
-  document.getElementById("stMine").textContent  = mine.length;
-  document.getElementById("stOther").textContent = others.length;
-  document.getElementById("stSoon").textContent  = soon.length;
+  document.getElementById("stFixed").textContent    = S.fixed.length;
+  document.getElementById("stApproval").textContent = approval.length;
+  document.getElementById("stOther").textContent    = others.length;
+  document.getElementById("stSoon").textContent      = soon.length;
 
   const kindLabel = k => ({ADVOCATE:"counsel name",PARTY:"party name",
                            CASE:"case number",OTHER:"keyword"}[k] || "");
-  const hitCard = h => `<div class="card click" onclick="viewHit('${esc(h.hash)}')">
-      <div style="display:flex;gap:8px">
-        <span class="pill" style="margin-top:0">${esc(h.source||"Cause list")}</span>
+  const isPrimary = term => { const k = S.keys.find(x=>x.term===term); return k && k.priority==="PRIMARY"; };
+  const hitIsPrimary = h => (h.terms||[]).some(t=>isPrimary(t.term));
+  const hitTitle = h => (h.terms||[]).map(t=>t.term).join("  ·  ");
+  const hitKinds = h => { const seen=new Set(); return (h.terms||[]).map(t=>kindLabel(t.kind))
+      .filter(k=>k && !seen.has(k) && seen.add(k)).join(", "); };
+  const checkbox = h => `<input type="checkbox" class="hitcheck" style="width:auto;flex:none"
+      ${selectedHits.has(h.hash)?"checked":""} onclick="toggleHitSelect('${esc(h.hash)}')">`;
+
+  /* A C.M./application filed in this same case is folded into the same box
+     as its main case (or, if the main case itself never showed up, into one
+     shared box with any other C.M.s of that same case) — so it's obvious at
+     a glance that they're one matter, not several unrelated results. */
+  const relatedBlock = h => (h.related && h.related.length)
+    ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
+         <div class="meta" style="margin-top:0">+ ${h.related.length} related C.M./application line${h.related.length===1?"":"s"} in this case:</div>
+         ${h.related.map(r=>`<div class="hit" style="margin-top:6px">${esc(r)}</div>`).join("")}
+       </div>`
+    : "";
+
+  const hitCard = h => `<div class="card">
+      <div style="display:flex;gap:8px;align-items:center">
+        ${checkbox(h)}
+        <span class="pill" style="margin-top:0" onclick="viewHit('${esc(h.hash)}')">${esc(h.source||"Cause list")}</span>
+        ${hitIsPrimary(h) ? `<span class="pill warn" style="margin-top:0">Primary</span>` : ""}
+        ${(h.terms||[]).length > 1 ? `<span class="pill" style="margin-top:0">${h.terms.length} keywords matched</span>` : ""}
+        ${h.caseId ? `<span class="pill" style="margin-top:0;background:var(--brand);color:#fff">Saved case</span>` : ""}
+        ${h.listDate ? `<span class="pill warn" style="margin-top:0">Hearing: ${esc(h.listDate)}</span>` : ""}
         <span style="flex:1"></span>
         <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
       </div>
-      <div class="ttl" style="font-weight:700;margin-top:8px">${esc(h.term)}</div>
-      <div class="meta">${esc(kindLabel(h.kind))}</div>
+      <div class="ttl click" style="font-weight:700;margin-top:8px" onclick="viewHit('${esc(h.hash)}')">${esc(hitTitle(h))}</div>
+      <div class="meta">${esc(hitKinds(h))}</div>
       <div class="hit">${esc(h.raw)}</div>
+      ${relatedBlock(h)}
+      <div class="row" style="margin-top:8px">
+        <button class="btn2" onclick="openSaveDialog('${esc(h.hash)}')">Save to My Cases</button>
+        <button class="btn3" onclick="removeHit('${esc(h.hash)}')">Remove</button>
+      </div>
     </div>`;
 
   let html = "";
+
+  const selectableCount = mine.length + others.length + approval.length;
+  if(selectableCount){
+    html += `<div class="row" style="margin-bottom:4px">
+      <button class="btn3" style="white-space:nowrap" onclick="selectAllHits()">Select all (${selectableCount})</button>
+      ${selectedHits.size ? `<button class="btn3" style="white-space:nowrap" onclick="clearHitSelection()">Deselect all</button>` : ""}
+    </div>`;
+  }
+  if(selectedHits.size){
+    html += `<div class="okbox" style="display:flex;align-items:center;gap:10px">
+      <span style="flex:1">${selectedHits.size} selected</span>
+      <button class="btn" style="white-space:nowrap" onclick="saveSelectedHits()">Save to My Cases</button>
+      <button class="btnDanger" style="white-space:nowrap" onclick="clearSelectedHits()">Remove</button>
+    </div>`;
+  }
+
+  if(approval.length){
+    html += `<h2>Needs your approval<span class="n">${approval.length}</span></h2>`;
+    html += approval.map(h=>{
+      const p = S.pending.find(x=>x.id===h.pendingId);
+      return `<div class="card">
+        <div style="display:flex;gap:8px;align-items:center">
+          ${checkbox(h)}
+          <span class="pill warn" style="margin-top:0">Pending file match</span>
+          ${h.listDate ? `<span class="pill warn" style="margin-top:0">Hearing: ${esc(h.listDate)}</span>` : ""}
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:var(--muted)">${esc(stamp(h.foundAt))}</span>
+        </div>
+        <div class="ttl" style="font-weight:700;margin-top:8px">${esc(p ? p.title : hitTitle(h))}</div>
+        <div class="hit">${esc(h.raw)}</div>
+        ${relatedBlock(h)}
+        <div class="row" style="margin-top:10px">
+          <button class="btn" onclick="openSaveDialog('${esc(h.hash)}')">✓ Approve — save to My Cases</button>
+          <button class="btn3" onclick="dismissPendingHit('${esc(h.hash)}')">Not a match</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  if(S.fixed.length){
+    html += `<h2>Fixed cases — My Cases directory<span class="n">${S.fixed.length}</span></h2>`;
+    html += `<div class="card tblwrap"><table class="tbl">
+      <thead><tr><th>#</th><th>Title &amp; No.</th><th>Court</th><th>Judge / Hearing</th><th>Prayer / Remarks</th>
+        <th>Proceedings</th><th>Causelist No.</th><th></th></tr></thead>
+      <tbody>${S.fixed.map((f,i)=>`<tr>
+          <td>${i+1}</td>
+          <td class="click" onclick="editFixed(${f.id})">${esc(f.titleNo)}</td>
+          <td>${esc(f.court)}</td>
+          <td>${[f.judge, f.hearingDate ? `Hearing: ${f.hearingDate}` : ""].filter(Boolean).map(esc).join("<br>")}</td>
+          <td>${esc(f.prayer)}</td><td>${esc(f.proceedings)}</td><td>${esc(f.causelistNo)}</td>
+          <td><span class="rmv" onclick="removeFixed(${f.id})">Remove</span></td>
+        </tr>`).join("")}</tbody>
+    </table></div>`;
+  }
+  html += `<button class="btn2" style="width:100%;margin-top:8px" onclick="exportReportPdf()">Export case list PDF</button>`;
+
   if(mine.length){
-    html += `<h2>My cases fixed<span class="n">${mine.length}</span></h2>` +
+    html += `<h2>My saved cases — matched today<span class="n">${mine.length}</span></h2>` +
             mine.map(hitCard).join("");
   }
   if(others.length){
+    others.sort((a,b) => (hitIsPrimary(b)?1:0) - (hitIsPrimary(a)?1:0));
     html += `<h2>Other keyword matches<span class="n">${others.length}</span></h2>` +
             others.map(hitCard).join("");
   }
@@ -456,8 +946,379 @@ function renderDiary(){
       onclick="clearHits()">Clear all matches</button>`;
   }
   if(!html) html = `<div class="empty">Nothing yet.<br>Paste a cause list above to check it
-    against your keywords.</div>`;
+    against your keywords and pending files.</div>`;
   document.getElementById("diaryList").innerHTML = html;
+}
+
+function togglePendingSection(){
+  S.settings.pendingFilesEnabled = document.getElementById("pendingSectionEnabled").checked;
+  save(); render();
+}
+function renderPending(){
+  document.getElementById("pendingSectionEnabled").checked = S.settings.pendingFilesEnabled !== false;
+  const el = document.getElementById("pendingList");
+  if(!S.pending.length){
+    el.innerHTML = `<div class="empty">No pending files yet.<br>Add one above — it will be
+      checked every time you scan a cause list.</div>`;
+    return;
+  }
+  const sectionOn = S.settings.pendingFilesEnabled !== false;
+  const list = S.pending.slice().sort((a,b)=>b.addedAt-a.addedAt);
+  el.innerHTML = `<h2>Pending files<span class="n">${list.length}</span></h2>` +
+    (sectionOn ? "" : `<div class="warnbox">Checking is paused for this whole list — turn it back
+      on above to resume matching these against scanned cause lists.</div>`) +
+    list.map(p=>{
+      const matches = S.hits.filter(h=>h.pendingId===p.id);
+      const ref = [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear ? "/"+p.caseYear : "");
+      return `<div class="card">
+        ${ref.trim() ? `<div class="ref">${esc(ref.trim())}</div>` : ""}
+        <div class="ttl" style="font-weight:700">${esc(p.title)}</div>
+        ${p.note ? `<div class="meta">${esc(p.note)}</div>` : ""}
+        <div class="meta">Added ${esc(fmt(p.addedAt))}</div>
+        ${matches.length ? `<span class="pill warn">${matches.length} exact match${matches.length===1?"":"es"} found — review in Diary</span>` : ""}
+        <div class="row" style="margin-top:10px">
+          ${matches.length ? `<button class="btn3" onclick="switchTab('diary')">Review in Diary</button>` : ""}
+          <button class="btnDanger" onclick="removePending(${p.id})">Remove</button>
+        </div>
+      </div>`;
+    }).join("");
+}
+function addPending(){
+  const t = document.getElementById("newPending");
+  const n = document.getElementById("newPendingNote");
+  const ty = document.getElementById("newPendingType");
+  const no = document.getElementById("newPendingNo");
+  const yr = document.getElementById("newPendingYear");
+  const title = t.value.trim();
+  if(title.length < 5){ alert("Enter the case title — at least a few words."); return; }
+  S.pending.push({id:nextId(), title, note:n.value.trim(), addedAt:Date.now(),
+    caseType:ty.value.trim(), caseNo:no.value.trim(), caseYear:yr.value.trim()});
+  t.value = ""; n.value = ""; ty.value = ""; no.value = ""; yr.value = "";
+  save(); render();
+}
+function removePending(id){
+  if(!confirm("Remove this pending file? It will no longer be checked.")) return;
+  S.pending = S.pending.filter(p=>p.id!==id);
+  S.hits = S.hits.filter(h=>h.pendingId!==id);
+  save(); render();
+}
+
+/* --------------------------------------------------------------- tasks */
+/* Things a senior/officer told the lawyer to do, each with a deadline.
+   The web app can only warn while it happens to be open (no background
+   process is possible for a plain local page) — the Android app schedules
+   a real alarm-style alert for the deadline itself, even if it's closed. */
+function addTask(){
+  const t = document.getElementById("newTaskTitle");
+  const by = document.getElementById("newTaskAssignedBy");
+  const dl = document.getElementById("newTaskDeadline");
+  const title = t.value.trim();
+  if(title.length < 3){ alert("Describe the task — at least a few words."); return; }
+  const deadline = fromDateTimeInput(dl.value);
+  S.tasks.push({id:nextId(), title, assignedBy:by.value.trim(), deadline, done:false,
+    createdAt:Date.now(), alertedAt:0});
+  t.value = ""; by.value = ""; dl.value = "";
+  save(); render();
+}
+function toggleTaskDone(id){
+  const task = S.tasks.find(x=>x.id===id);
+  if(task){ task.done = !task.done; task.doneAt = task.done ? Date.now() : 0; save(); render(); }
+}
+function removeTask(id){
+  if(!confirm("Remove this task?")) return;
+  S.tasks = S.tasks.filter(x=>x.id!==id);
+  save(); render();
+}
+function taskStatus(task){
+  if(task.done) return "done";
+  if(!task.deadline) return "open";
+  const now = Date.now();
+  if(task.deadline < now) return "overdue";
+  if(task.deadline - now <= 2*86400000) return "soon";
+  return "open";
+}
+function renderTasks(){
+  const open = S.tasks.filter(t=>!t.done)
+    .sort((a,b)=>(a.deadline||Infinity)-(b.deadline||Infinity));
+  const done = S.tasks.filter(t=>t.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+
+  const overdue = open.filter(t=>taskStatus(t)==="overdue");
+  const soon = open.filter(t=>taskStatus(t)==="soon");
+  const alertsEl = document.getElementById("taskAlerts");
+  alertsEl.innerHTML = overdue.length
+    ? `<div class="warnbox"><b>${overdue.length} task${overdue.length===1?"":"s"} overdue</b> — deadline has already passed. Do these first.</div>`
+    : (soon.length ? `<div class="okbox">${soon.length} task${soon.length===1?"":"s"} due within 2 days.</div>` : "");
+  notifyOverdueTasks(overdue);
+
+  const statusPill = t => {
+    const s = taskStatus(t);
+    if(s==="overdue") return `<span class="pill warn" style="margin-top:0">Overdue</span>`;
+    if(s==="soon")    return `<span class="pill warn" style="margin-top:0">Due soon</span>`;
+    if(s==="open" && t.deadline) return `<span class="pill" style="margin-top:0">${esc(relLabel(t.deadline))}</span>`;
+    return "";
+  };
+  const taskCard = t => `<div class="card">
+      <div style="display:flex;gap:8px;align-items:center">
+        ${statusPill(t)}
+        ${t.assignedBy ? `<span class="pill" style="margin-top:0">From: ${esc(t.assignedBy)}</span>` : ""}
+        <span style="flex:1"></span>
+        ${t.deadline ? `<span style="font-size:11px;color:var(--muted)">${esc(fmtDateTime(t.deadline))}</span>` : ""}
+      </div>
+      <div class="ttl" style="font-weight:700;margin-top:8px;${t.done?"text-decoration:line-through;opacity:.6":""}">${esc(t.title)}</div>
+      <div class="row" style="margin-top:10px">
+        <button class="${t.done?"btn3":"btn"}" onclick="toggleTaskDone(${t.id})">${t.done?"Mark not done":"✓ Mark complete"}</button>
+        <button class="btnDanger" onclick="removeTask(${t.id})">Remove</button>
+      </div>
+    </div>`;
+
+  let html = "";
+  if(open.length){
+    html += `<h2>Open tasks<span class="n">${open.length}</span></h2>` + open.map(taskCard).join("");
+  }
+  if(done.length){
+    html += `<h2>Completed<span class="n">${done.length}</span></h2>` + done.map(taskCard).join("");
+  }
+  if(!S.tasks.length){
+    html = `<div class="empty">No tasks yet.<br>Add one above whenever a senior or officer tells you to do something with a deadline.</div>`;
+  }
+  document.getElementById("taskList").innerHTML = html;
+}
+/* Best-effort only: fires a browser notification for a newly-overdue task,
+   but only while this page happens to be open — a plain local web page
+   cannot wake up in the background the way the Android app can. */
+function notifyOverdueTasks(overdue){
+  if(!("Notification" in window) || Notification.permission !== "granted") return;
+  for(const t of overdue){
+    if(t.alertedAt) continue;
+    new Notification("Task overdue", {body:t.title});
+    t.alertedAt = Date.now();
+  }
+  if(overdue.some(t=>t.alertedAt)) save();
+}
+if("Notification" in window && Notification.permission === "default"){
+  document.addEventListener("click", () => Notification.requestPermission(), {once:true});
+}
+setInterval(() => { if(tab === "tasks") renderTasks(); }, 60000);
+
+/* ------------------------------------------------- save to My Cases / fixed */
+/* "My Cases directory" IS the exportable Fixed-cases report (S.fixed) — every
+   match, whichever section it came from (a saved Case, a keyword, or an
+   approved pending file), lands here through the same path, carrying a link
+   back to the saved Case (caseId) when there is one. */
+function openSaveDialog(hash){
+  const h = S.hits.find(x=>x.hash===hash);
+  if(!h) return;
+  const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
+  const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
+  const pendingRef = p && p.caseNo ? [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear?"/"+p.caseYear:"") : "";
+  const defaultTitle = p ? (pendingRef ? pendingRef + " " + p.title : p.title)
+    : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
+  openModal(`<h3>Save to My Cases</h3>
+    <div class="hit">${esc(h.raw)}</div>
+    <label>Title &amp; No. of the case</label>
+    <textarea id="apTitle">${esc(defaultTitle)}</textarea>
+    <label>Name of the Court</label>
+    <input id="apCourt" placeholder="e.g. Justice Asad Ali Bajwa">
+    <label>Nature of Prayer &amp; Remarks</label>
+    <input id="apPrayer" placeholder="e.g. Unblocking of CNIC">
+    <label>Proceedings</label>
+    <input id="apProceedings" placeholder="e.g. First Hearing">
+    <label>Urgent Causelist No.</label>
+    <input id="apCauselist" placeholder="e.g. 4" inputmode="numeric">
+    <div class="row" style="margin-top:12px">
+      <button class="btn" onclick="saveHitToCases('${esc(hash)}')">Save</button>
+      <button class="btn3" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+/* A folded-in C.M./application line is part of this same case's record,
+   so it travels along into the exportable Fixed-cases report too. */
+function fullRaw(h){ return [h.raw, ...(h.related||[])].join("\n"); }
+/* A row's presiding judge is prefixed onto its own raw text as "[Judge X] ..."
+   (see extractJudge / scanPaste) — pulled back out here so a saved case can
+   carry it as its own field instead of buried in free text. */
+function extractJudgePrefix(raw){
+  const m = (raw||"").match(/^\[(.+?)\]\s/);
+  return m ? m[1] : "";
+}
+/* Approving a scan result should also populate the Cases tab — not just the
+   exportable Fixed-cases report — so a case spotted by scanning becomes a
+   fully trackable Case (hearings, fees, notes, future watching) without ever
+   typing a case number in by hand. Only acts when a case number can be
+   parsed out of the confirmed title; otherwise the Fixed-cases entry is
+   still saved exactly as before, just without a Case link. */
+function resolveCaseFromApproval(titleNo, court, existingCaseId){
+  if(existingCaseId) return existingCaseId;
+  const m = titleNo.match(OWN_REF_RE);
+  if(!m) return 0;
+  const caseType = m[1].trim();
+  const caseNo = m[2];
+  const caseYear = m[3].length===2 ? "20"+m[3] : m[3];
+  let c = S.cases.find(x=>x.caseNo===caseNo && x.caseYear===caseYear);
+  if(c){
+    if(!c.court && court) c.court = court;
+    c.updatedAt = Date.now();
+    return c.id;
+  }
+  const vsMatch = titleNo.match(/^(.*?)\bvs\.?\b(.*)$/i);
+  const petitioner = vsMatch ? vsMatch[1].replace(OWN_REF_RE, "").trim() : "";
+  const respondent = vsMatch ? vsMatch[2].replace(/etc\.?\s*$/i, "").trim() : "";
+  c = {
+    id: nextId(), caseType, caseNo, caseYear, petitioner, respondent,
+    clientName:"", clientPhone:"", court: court||"", judge:"", stage:"",
+    nextDate:0, status:"ACTIVE", feeTotal:0, feeReceived:0, notes:"",
+    hearings:[], watched:true, createdAt:Date.now(), updatedAt:Date.now()
+  };
+  S.cases.push(c);
+  return c.id;
+}
+function saveHitToCases(hash){
+  const h = S.hits.find(x=>x.hash===hash);
+  if(!h) return;
+  const g = id => (document.getElementById(id)?.value || "").trim();
+  const titleNo = g("apTitle");
+  if(!titleNo){ alert("Add the case title."); return; }
+  const caseId = resolveCaseFromApproval(titleNo, g("apCourt"), h.caseId || 0);
+  S.fixed.unshift({
+    id: nextId(), titleNo, court: g("apCourt"), prayer: g("apPrayer"),
+    proceedings: g("apProceedings"), causelistNo: g("apCauselist"),
+    fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId,
+    judge: extractJudgePrefix(h.raw), hearingDate: h.listDate || ""
+  });
+  if(h.pendingId) S.pending = S.pending.filter(p=>p.id!==h.pendingId);
+  S.hits = S.hits.filter(x=>x.hash!==hash);
+  selectedHits.delete(hash);
+  save(); closeModal(); render();
+}
+/* Bulk version — skips the per-item form for speed; details can be filled in
+   later by tapping the row in the Fixed-cases table. */
+function saveSelectedHits(){
+  if(!selectedHits.size) return;
+  for(const hash of [...selectedHits]){
+    const h = S.hits.find(x=>x.hash===hash);
+    if(!h) continue;
+    const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
+    const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
+    const pendingRef = p && p.caseNo ? [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear?"/"+p.caseYear:"") : "";
+    const titleNo = p ? (pendingRef ? pendingRef + " " + p.title : p.title)
+      : (c ? (caseRef(c) || caseTitle(c)) : (h.terms||[]).map(t=>t.term).join("  ·  "));
+    const caseId = resolveCaseFromApproval(titleNo, "", h.caseId || 0);
+    S.fixed.unshift({
+      id: nextId(), titleNo, court:"", prayer:"", proceedings:"", causelistNo:"",
+      fixedDate: Date.now(), sourceRaw: fullRaw(h), caseId,
+      judge: extractJudgePrefix(h.raw), hearingDate: h.listDate || ""
+    });
+    if(h.pendingId) S.pending = S.pending.filter(x=>x.id!==h.pendingId);
+  }
+  S.hits = S.hits.filter(x=>!selectedHits.has(x.hash));
+  selectedHits.clear();
+  save(); render();
+}
+function toggleHitSelect(hash){
+  if(selectedHits.has(hash)) selectedHits.delete(hash); else selectedHits.add(hash);
+  render();
+}
+function clearHitSelection(){ selectedHits.clear(); render(); }
+function selectAllHits(){
+  const approval = S.hits.filter(h=>h.pendingId);
+  const rest = S.hits.filter(h=>!h.pendingId);
+  for(const h of [...approval, ...rest]) selectedHits.add(h.hash);
+  render();
+}
+function clearSelectedHits(){
+  if(!selectedHits.size) return;
+  if(!confirm(`Remove ${selectedHits.size} selected match${selectedHits.size===1?"":"es"} from the Diary? Your cases are not touched.`)) return;
+  S.hits = S.hits.filter(x=>!selectedHits.has(x.hash));
+  selectedHits.clear();
+  save(); render();
+}
+
+function editFixed(id){
+  const f = S.fixed.find(x=>x.id===id);
+  if(!f) return;
+  openModal(`<h3>Edit case in My Cases</h3>
+    <label>Title &amp; No. of the case</label>
+    <textarea id="apTitle">${esc(f.titleNo)}</textarea>
+    <label>Name of the Court</label>
+    <input id="apCourt" value="${esc(f.court)}" placeholder="e.g. Justice Asad Ali Bajwa">
+    <label>Nature of Prayer &amp; Remarks</label>
+    <input id="apPrayer" value="${esc(f.prayer)}" placeholder="e.g. Unblocking of CNIC">
+    <label>Proceedings</label>
+    <input id="apProceedings" value="${esc(f.proceedings)}" placeholder="e.g. First Hearing">
+    <label>Urgent Causelist No.</label>
+    <input id="apCauselist" value="${esc(f.causelistNo)}" placeholder="e.g. 4" inputmode="numeric">
+    <div class="row" style="margin-top:12px">
+      <button class="btn" onclick="updateFixed(${id})">Save</button>
+      <button class="btn3" onclick="closeModal()">Cancel</button>
+    </div>
+    <button class="btnDanger" style="width:100%;margin-top:8px" onclick="removeFixed(${id});closeModal()">Remove from My Cases</button>`);
+}
+function updateFixed(id){
+  const f = S.fixed.find(x=>x.id===id);
+  if(!f) return;
+  const g = elId => (document.getElementById(elId)?.value || "").trim();
+  const titleNo = g("apTitle");
+  if(!titleNo){ alert("Add the case title."); return; }
+  f.titleNo = titleNo; f.court = g("apCourt"); f.prayer = g("apPrayer");
+  f.proceedings = g("apProceedings"); f.causelistNo = g("apCauselist");
+  save(); closeModal(); render();
+}
+function dismissPendingHit(hash){
+  S.hits = S.hits.filter(x=>x.hash!==hash);
+  selectedHits.delete(hash);
+  save(); render();
+}
+function removeHit(hash){
+  S.hits = S.hits.filter(x=>x.hash!==hash);
+  selectedHits.delete(hash);
+  save(); render();
+}
+function removeFixed(id){
+  if(!confirm("Remove this case from My Cases?")) return;
+  S.fixed = S.fixed.filter(f=>f.id!==id);
+  save(); render();
+}
+
+/* --------------------------------------------------------------- pdf/print */
+const STATUS_RANK = {ACTIVE:0, DECIDED:1, ARCHIVED:2};
+const STATUS_LABEL = {ACTIVE:"Active", DECIDED:"Decided", ARCHIVED:"Archived"};
+function buildPrintReport(){
+  const list = S.cases.slice().sort((a,b)=>{
+    const ra = STATUS_RANK[a.status] ?? 2, rb = STATUS_RANK[b.status] ?? 2;
+    if(ra !== rb) return ra - rb;
+    const na = a.nextDate || Infinity, nb = b.nextDate || Infinity;
+    return na - nb;
+  });
+  let rows = "";
+  let lastRank = -1;
+  list.forEach((c,i)=>{
+    const rank = STATUS_RANK[c.status] ?? 2;
+    if(rank !== lastRank){
+      lastRank = rank;
+      rows += `<tr><td colspan="6" style="font-weight:700;border:none;padding-top:14px">${STATUS_LABEL[c.status] || "Other"}</td></tr>`;
+    }
+    const courtJudge = [c.court, c.judge].filter(Boolean).join(" · ");
+    rows += `<tr><td>${i+1}</td><td>${esc(caseRef(c) || "—")}</td><td>${esc(caseTitle(c))}</td>
+      <td>${esc(courtJudge)}</td><td>${esc(c.stage||"")}</td>
+      <td>${c.nextDate ? esc(fmt(c.nextDate)) : "—"}</td></tr>`;
+  });
+  const pendingLis = S.pending.map(p=>{
+    const ref = p && p.caseNo ? [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear?"/"+p.caseYear:"") : "";
+    return `<li>${esc(p.title)}${ref ? ` [${esc(ref)}]` : ""}${p.note ? ` <i>(${esc(p.note)})</i>` : ""}</li>`;
+  }).join("");
+  document.getElementById("printReport").innerHTML = `
+    <h1>CCMS — All Cases Report</h1>
+    <p class="fixedFor" style="font-weight:400">Generated ${esc(stamp(Date.now()))}</p>
+    <table>
+      <thead><tr><th>Sr</th><th>Case No.</th><th>Title</th>
+        <th>Court / Judge</th><th>Stage</th><th>Next Hearing</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" style="text-align:center">No cases tracked yet</td></tr>`}</tbody>
+    </table>
+    <h2>Pending files (not yet fixed):</h2>
+    <ul>${pendingLis || "<li>None</li>"}</ul>`;
+}
+function exportReportPdf(){
+  buildPrintReport();
+  setTimeout(()=>window.print(), 50);
 }
 
 function renderKeys(){
@@ -466,11 +1327,19 @@ function renderKeys(){
     el.innerHTML = `<span class="chip off">No keywords yet</span>`;
     return;
   }
-  el.innerHTML = S.keys.map(k=>`<span class="chip ${k.enabled===false?"off":""}">
-      <b onclick="toggleKey(${k.id})">${esc(k.term)}</b>
-      <span style="opacity:.65;font-size:11px">${esc((k.kind||"").toLowerCase())}</span>
-      <span class="x" onclick="delKey(${k.id})">×</span>
-    </span>`).join("");
+  const chip = k => `<span class="chip ${k.enabled===false?"off":""}">
+      <b ${k.builtin?"":`onclick="toggleKey(${k.id})"`}>${esc(k.term)}</b>
+      <span style="opacity:.65;font-size:11px">${k.builtin ? "always on" : esc((k.kind||"").toLowerCase())}</span>
+      ${k.builtin ? "" : `<span class="x" onclick="togglePriority(${k.id})" title="Toggle primary">${k.priority==="PRIMARY"?"★":"☆"}</span>`}
+      ${k.builtin ? "" : `<span class="x" onclick="delKey(${k.id})">×</span>`}
+    </span>`;
+  const primary = S.keys.filter(k=>k.priority==="PRIMARY");
+  const other   = S.keys.filter(k=>k.priority!=="PRIMARY");
+  el.innerHTML =
+    `<h2 style="margin:4px 4px 8px">Primary keywords<span class="n">${primary.length}</span></h2>` +
+    `<div class="chips">${primary.length ? primary.map(chip).join("") : `<span class="chip off">None yet</span>`}</div>` +
+    `<h2 style="margin:18px 4px 8px">Other keywords<span class="n">${other.length}</span></h2>` +
+    `<div class="chips">${other.length ? other.map(chip).join("") : `<span class="chip off">None yet</span>`}</div>`;
 }
 
 /* -------------------------------------------------------------- keywords */
@@ -478,17 +1347,27 @@ function addKey(){
   const i = document.getElementById("newKey");
   const term = i.value.trim();
   if(term.length < 3){ alert("Keyword is too short — use at least 3 characters."); return; }
-  S.keys.push({id:nextId(), term, kind:document.getElementById("newKeyKind").value, enabled:true});
+  const primary = document.getElementById("newKeyPrimary").checked;
+  S.keys.push({id:nextId(), term, kind:document.getElementById("newKeyKind").value,
+    enabled:true, priority: primary ? "PRIMARY" : "OTHER"});
   i.value = "";
+  document.getElementById("newKeyPrimary").checked = false;
   save(); render();
 }
 function delKey(id){
+  const k = S.keys.find(x=>x.id===id);
+  if(k && k.builtin) return;
   S.keys = S.keys.filter(k=>k.id!==id);
   save(); render();
 }
 function toggleKey(id){
   const k = S.keys.find(x=>x.id===id);
+  if(k && k.builtin) return;
   if(k){ k.enabled = k.enabled === false; save(); render(); }
+}
+function togglePriority(id){
+  const k = S.keys.find(x=>x.id===id);
+  if(k && !k.builtin){ k.priority = k.priority === "PRIMARY" ? "OTHER" : "PRIMARY"; save(); render(); }
 }
 
 /* ------------------------------------------------------------------ scan */
@@ -500,49 +1379,184 @@ function scanPaste(){
   const text = document.getElementById("paste").value;
   const out  = document.getElementById("scanResult");
   if(!text.trim()){ out.innerHTML = `<div class="warnbox" style="margin-top:10px">Paste the cause list text first.</div>`; return; }
-  if(!S.keys.length && !S.cases.length){
-    out.innerHTML = `<div class="warnbox" style="margin-top:10px">Add a keyword or a case first — there is nothing to look for.</div>`;
+  if(!S.keys.length && !S.cases.length && !S.pending.length){
+    out.innerHTML = `<div class="warnbox" style="margin-top:10px">Add a keyword, a case or a pending file first — there is nothing to look for.</div>`;
     return;
   }
 
-  const probes = compile(S.keys, S.cases);
-  const rows = text.split("\n").map(r=>r.trim()).filter(r=>r.length >= 8);
-  const seen = new Set(S.hits.map(h=>h.hash));
-  const now = Date.now();
-  let fresh = 0, total = 0;
+  const probes = compile(S.keys, S.cases, S.pending);
+  const activeKeyCount = S.keys.filter(k=>k.enabled!==false).length;
+  const activePendingCount = S.settings.pendingFilesEnabled === false ? 0 : S.pending.length;
+  const principalSeatOnly = S.settings.principalSeatOnly !== false;
 
+  let rows = mergeSplitCmLines(text.split("\n").map(r=>r.trim())).filter(r=>r.length >= 8);
+  let skippedBench = 0;
+  if(principalSeatOnly){
+    const kept = rows.filter(r => !isOtherBench(r));
+    skippedBench = rows.length - kept.length;
+    rows = kept;
+  }
+
+  const now = Date.now();
+  let freshRows = 0, matchedRows = 0, foldedCm = 0;
+
+  // Pass 1: find every matched row and compute its own identity (hash) and,
+  // for C.M./application rows, which main case they belong to. The presiding
+  // judge is printed once per bench section (a date/bench-type header, then
+  // one or two judge lines), never on the case row itself — tracked here
+  // across rows in print order and prefixed onto whatever this section's
+  // rows turn out to match.
+  const entries = [];
+  let currentJudges = [];
+  let currentListDate = "";
   for(const row of rows){
-    let hs = findHits(row, probes);
+    const trimmedRow = row.trim();
+    if(DATE_LINE_RE.test(trimmedRow)) currentListDate = trimmedRow;
+    if(isSectionReset(row)) currentJudges = [];
+    const judgeLine = extractJudge(row);
+    if(judgeLine){ currentJudges.push(judgeLine); continue; }
+
+    const hs = findHits(row, probes);
     if(!hs.length) continue;
-    // If a row is one of your own cases, it belongs in "My cases" only — a
-    // keyword that also matched the same line must not duplicate it below.
-    const mineOnly = hs.filter(h => h.caseId);
-    if(mineOnly.length) hs = mineOnly;
-    const clipped = row.length > 400 ? row.slice(0,400) + "…" : row;
-    for(const h of hs){
-      total++;
-      const hash = hashOf(["paste", clipped, h.term]);
-      if(seen.has(hash)) continue;
-      seen.add(hash);
-      fresh++;
-      S.hits.unshift({hash, term:h.term, kind:h.kind, caseId:h.caseId,
-        source:"Pasted list", raw:clipped, foundAt:now});
+    const cm = isCmRow(row);
+    const parents = cm ? cmParentRefs(row) : [];
+    const judge = currentJudges.join(" & ");
+    const base = row.length > 400 ? row.slice(0,400) + "…" : row;
+    const clipped = judge ? `[${judge}] ${base}` : base;
+    entries.push({row, hs, cm, parents, clipped, listDate: currentListDate, hash: hashOf(["paste", clipped])});
+  }
+
+  // Pass 2: every bare main-case row this scan matched, indexed by its ref,
+  // so a C.M. filed in it can be found regardless of which order they were
+  // printed in (a C.M. is often printed right after its main case, but not
+  // always before it in the pasted text).
+  const mainCaseHashByRef = new Map();
+  for(const e of entries){
+    if(e.cm) continue;
+    for(const ref of ownCaseRefs(e.row)){
+      if(!mainCaseHashByRef.has(ref)) mainCaseHashByRef.set(ref, e.hash);
+    }
+  }
+
+  // Pass 3: work out which single "box" each row belongs to. A C.M. whose
+  // main case also matched joins that case's box; a C.M. whose main case
+  // did NOT turn up on its own still gets a box — the first such C.M.
+  // becomes that box, and any further C.M.s of the very same case join it —
+  // so the same case is never shown twice just because several of its
+  // applications matched.
+  const cmGroupHash = new Map();
+  for(const e of entries){
+    if(e.cm && e.parents.length){
+      const mainRef = e.parents.find(p => mainCaseHashByRef.has(p));
+      if(mainRef){ e.groupHash = mainCaseHashByRef.get(mainRef); continue; }
+      const key = e.parents[0];
+      if(!cmGroupHash.has(key)) cmGroupHash.set(key, e.hash);
+      e.groupHash = cmGroupHash.get(key);
+    } else {
+      e.groupHash = e.hash;
+    }
+  }
+
+  // Pass 4: fold every non-root row into its group's root entry as "related".
+  const roots = new Map();
+  for(const e of entries){
+    if(e.hash === e.groupHash) roots.set(e.hash, { entry:e, related:[] });
+  }
+  for(const e of entries){
+    if(e.hash === e.groupHash) continue;
+    const g = roots.get(e.groupHash);
+    if(g){ g.related.push(e); foldedCm++; }
+    else roots.set(e.hash, { entry:e, related:[] }); // safety net — never silently lose a row
+  }
+  matchedRows = roots.size;
+
+  for(const {entry, related} of roots.values()){
+    const allHs = [entry, ...related].flatMap(x => x.hs);
+    const mine = allHs.find(h => h.caseId);
+    const pendingHit = !mine && allHs.find(h => h.pendingId);
+    const caseId = mine ? mine.caseId : 0;
+    const pendingId = pendingHit ? pendingHit.pendingId : 0;
+
+    const seenTerm = new Set();
+    const terms = [];
+    for(const h of allHs){
+      const key = normalize(h.term);
+      if(seenTerm.has(key)) continue;
+      seenTerm.add(key);
+      terms.push({term:h.term, kind:h.kind});
+    }
+    const relatedRaw = related.map(r => r.clipped);
+
+    const existing = S.hits.find(x=>x.hash===entry.hash);
+    if(existing){
+      let added = false;
+      for(const t of terms){
+        if(!existing.terms.some(et=>normalize(et.term)===normalize(t.term))){
+          existing.terms.push(t);
+          added = true;
+        }
+      }
+      existing.related = existing.related || [];
+      for(const r of relatedRaw){
+        if(!existing.related.includes(r)){ existing.related.push(r); added = true; }
+      }
+      if(caseId) existing.caseId = caseId;
+      if(pendingId && !existing.caseId) existing.pendingId = pendingId;
+      if(entry.listDate) existing.listDate = entry.listDate;
+      if(added){ existing.foundAt = now; freshRows++; }
+    } else {
+      S.hits.unshift({hash:entry.hash, terms, caseId, pendingId, source:"Pasted list",
+        raw:entry.clipped, related:relatedRaw, listDate:entry.listDate||"", foundAt:now});
+      freshRows++;
     }
   }
   if(S.hits.length > 400) S.hits.length = 400;
+
+  S.scans = S.scans || [];
+  S.scans.unshift({id:nextId(), at:now, rows: rows.map(r=>r.length>300?r.slice(0,300)+"…":r)});
+  if(S.scans.length > 15) S.scans.length = 15;
+
   save();
 
-  const mine = S.hits.filter(h=>h.caseId).length;
-  out.innerHTML = fresh
-    ? `<div class="okbox" style="margin-top:10px"><b>${fresh} new match${fresh===1?"":"es"}</b>
-         from ${rows.length} lines. ${mine} total tied to your own cases —
-         see the Diary below.</div>`
+  const checkedNote = `Checked ${activeKeyCount} keyword${activeKeyCount===1?"":"s"}
+    (incl. NADRA / citizenship defaults) and ${activePendingCount} pending file${activePendingCount===1?"":"s"}.` +
+    (skippedBench ? ` Skipped ${skippedBench} other-bench line${skippedBench===1?"":"s"} (Bahawalpur/Multan/Rawalpindi).` : "") +
+    (foldedCm ? ` Grouped ${foldedCm} C.M./application line${foldedCm===1?"":"s"} into their main case's box.` : "");
+  out.innerHTML = freshRows
+    ? `<div class="okbox" style="margin-top:10px"><b>${freshRows} new/updated case${freshRows===1?"":"s"}</b>
+         from ${matchedRows} matched line${matchedRows===1?"":"s"} of ${rows.length} checked. ${checkedNote} See the Diary below —
+         pending-file matches need your approval before they count as fixed.</div>`
     : `<div class="warnbox" style="margin-top:10px">
-         ${total ? `Nothing new — ${total} match${total===1?"":"es"} were already recorded.`
-                 : `No matches in ${rows.length} lines. Check your keywords are spelled the way
-                    the court prints them.`}</div>`;
+         ${matchedRows ? `Nothing new — ${matchedRows} matched line${matchedRows===1?"":"s"} were already recorded.`
+                 : `No matches in ${rows.length} lines. ${checkedNote}`}</div>`;
   render();
 }
+function searchScans(){
+  const q = document.getElementById("lhcSearch").value.trim();
+  const out = document.getElementById("lhcSearchResult");
+  if(q.length < 2){ out.innerHTML = `<div class="warnbox" style="margin-top:10px">Type at least 2 characters.</div>`; return; }
+  if(!(S.scans||[]).length){
+    out.innerHTML = `<div class="warnbox" style="margin-top:10px">No checked lists yet — scan a cause list first.</div>`;
+    return;
+  }
+  const qTokens = normalize(q).split(" ").filter(Boolean);
+  const matches = [];
+  outer:
+  for(const scan of S.scans){
+    for(const row of scan.rows){
+      const nr = normalize(row);
+      if(qTokens.every(t => nr.indexOf(t) !== -1)){
+        matches.push({row, at:scan.at});
+        if(matches.length >= 50) break outer;
+      }
+    }
+  }
+  out.innerHTML = matches.length
+    ? `<div class="okbox" style="margin-top:10px">${matches.length} match${matches.length===1?"":"es"} found.</div>` +
+      matches.map(m=>`<div class="hit">${esc(m.row)}<div class="meta" style="margin-top:4px">Checked ${esc(stamp(m.at))}</div></div>`).join("")
+    : `<div class="warnbox" style="margin-top:10px">No matches across ${S.scans.length} checked list${S.scans.length===1?"":"s"}.</div>`;
+}
+
 function clearHits(){
   if(!confirm("Clear all recorded matches? Your cases are not touched.")) return;
   S.hits = []; save(); render();
@@ -558,9 +1572,26 @@ function viewHit(hash){
   const h = S.hits.find(x=>x.hash===hash);
   if(!h) return;
   const c = h.caseId ? S.cases.find(x=>x.id===h.caseId) : null;
-  openModal(`<h3>${esc(h.term)}</h3>
+  const p = h.pendingId ? S.pending.find(x=>x.id===h.pendingId) : null;
+  const kindLabel = k => ({ADVOCATE:"counsel name",PARTY:"party name",
+                           CASE:"case number",OTHER:"keyword"}[k] || "");
+  const terms = h.terms || [];
+  const title = p ? p.title : (c ? (caseRef(c)||caseTitle(c)) : terms.map(t=>t.term).join("  ·  "));
+  const lines = [
+    c && c.court && "Bench: " + c.court,
+    c && c.judge && "Judge / court: " + c.judge,
+    c && c.stage && "Stage: " + c.stage,
+    h.listDate && "Hearing date: " + h.listDate,
+    "Source: " + h.source,
+    "Found: " + stamp(h.foundAt)
+  ].filter(Boolean).map(esc).join("<br>");
+  const related = h.related || [];
+  openModal(`<h3>${esc(title)}</h3>
+    ${terms.length ? `<div class="meta">Matched: ${terms.map(t=>esc(t.term)+(kindLabel(t.kind)?` (${esc(kindLabel(t.kind))})`:"")).join(", ")}</div>` : ""}
     <div class="hit">${esc(h.raw)}</div>
-    <div class="note">Source: ${esc(h.source)}<br>Found: ${esc(stamp(h.foundAt))}</div>
+    ${related.length ? `<div class="meta" style="margin-top:8px">+ ${related.length} related C.M./application line${related.length===1?"":"s"} in this case:</div>
+      ${related.map(r=>`<div class="hit" style="margin-top:6px">${esc(r)}</div>`).join("")}` : ""}
+    <div class="note" style="line-height:1.7">${lines}</div>
     ${c ? `<button class="btn2" style="width:100%;margin-top:12px"
             onclick="closeModal();viewCase(${c.id})">Open ${esc(caseRef(c)||caseTitle(c))}</button>` : ""}
     <button class="btn3" style="width:100%;margin-top:8px" onclick="closeModal()">Close</button>`);
@@ -581,12 +1612,17 @@ function viewCase(id){
   ].filter(Boolean).map(esc).join("<br>");
 
   const hearings = (c.hearings||[]).slice().sort((a,b)=>b.date-a.date);
+  const fixedEntry = S.fixed.find(f=>f.caseId===id);
   openModal(`
     <h3>${esc(caseRef(c) || caseTitle(c))}</h3>
     <div class="card">
       <div class="ttl" style="font-weight:600">${esc(caseTitle(c))}</div>
       <div class="meta" style="line-height:1.7">${lines}</div>
       ${c.notes ? `<div class="hit">${esc(c.notes)}</div>` : ""}
+      ${fixedEntry ? `<div class="okbox" style="margin-top:10px">✓ Fixed in cause list —
+        ${esc(fixedEntry.proceedings || "listed")}${fixedEntry.causelistNo ? ` (Causelist No. ${esc(fixedEntry.causelistNo)})` : ""}
+        on ${esc(fmt(fixedEntry.fixedDate))}</div>`
+        : `<div class="note">Not yet seen in a checked cause list.</div>`}
       <div class="row" style="margin-top:12px">
         <button class="btn2" onclick="closeModal();editCase(${c.id})">Edit</button>
         ${c.clientPhone ? `<a href="tel:${esc(c.clientPhone)}" style="flex:1;text-decoration:none">
@@ -636,10 +1672,18 @@ function editCase(id){
   const c = id ? S.cases.find(x=>x.id===id) : {
     caseType:"",caseNo:"",caseYear:"",petitioner:"",respondent:"",clientName:"",
     clientPhone:"",court:"",judge:"",stage:"",nextDate:0,status:"ACTIVE",
-    feeTotal:0,feeReceived:0,notes:"",hearings:[]
+    feeTotal:0,feeReceived:0,notes:"",hearings:[],watched:true
   };
   const f = (k,v) => esc(c[k] || v || "");
+  const watched = c.watched !== false;
   openModal(`<h3>${id ? "Edit case" : "Add case"}</h3>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+      <label class="switch" style="margin:0">
+        <input type="checkbox" id="f_watched" ${watched?"checked":""}>
+        <span class="slider"></span>
+      </label>
+      <span style="font-size:13px">Check this case's number automatically when scanning cause lists</span>
+    </div>
     <div class="row">
       <div><label>Type</label><input id="f_caseType" value="${f("caseType")}" placeholder="W.P."></div>
       <div><label>Number</label><input id="f_caseNo" value="${f("caseNo")}" placeholder="12345"></div>
@@ -685,6 +1729,7 @@ function saveCase(id){
   c.status      = g("status") || "ACTIVE";
   c.feeTotal    = parseFloat(g("feeTotal")) || 0;
   c.feeReceived = parseFloat(g("feeReceived")) || 0;
+  c.watched     = document.getElementById("f_watched")?.checked !== false;
   c.updatedAt   = Date.now();
 
   if(!c.caseNo && !c.petitioner && !c.respondent){
@@ -705,8 +1750,8 @@ function deleteCase(id){
 /* ---------------------------------------------------------------- backup */
 function exportData(){
   const blob = new Blob([JSON.stringify(
-    {format:"casediary-backup", version:1, exportedAt:Date.now(),
-     cases:S.cases, watchTerms:S.keys}, null, 2)], {type:"application/json"});
+    {format:"casediary-backup", version:2, exportedAt:Date.now(),
+     cases:S.cases, watchTerms:S.keys, pending:S.pending, fixed:S.fixed}, null, 2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "case-diary-backup-" + toInput(Date.now()) + ".json";
@@ -721,7 +1766,7 @@ function importData(ev){
     try{
       const d = JSON.parse(r.result);
       if(d.format !== "casediary-backup") throw new Error("not a Case Diary backup");
-      let nc = 0, nk = 0;
+      let nc = 0, nk = 0, np = 0, nf = 0;
       for(const c of (d.cases||[])){
         S.cases.push(Object.assign({}, c, {id:nextId(), hearings:c.hearings||[]}));
         nc++;
@@ -729,11 +1774,22 @@ function importData(ev){
       const have = new Set(S.keys.map(k=>k.term.toLowerCase()));
       for(const k of (d.watchTerms||[])){
         if(!k.term || have.has(k.term.toLowerCase())) continue;
-        S.keys.push({id:nextId(), term:k.term, kind:k.kind||"ADVOCATE", enabled:k.enabled!==false});
+        S.keys.push({id:nextId(), term:k.term, kind:k.kind||"ADVOCATE", enabled:k.enabled!==false, builtin:false});
         nk++;
       }
+      const haveTitles = new Set(S.pending.map(p=>p.title.toLowerCase()));
+      for(const p of (d.pending||[])){
+        if(!p.title || haveTitles.has(p.title.toLowerCase())) continue;
+        S.pending.push({id:nextId(), title:p.title, note:p.note||"", addedAt:p.addedAt||Date.now()});
+        np++;
+      }
+      for(const f of (d.fixed||[])){
+        if(!f.titleNo) continue;
+        S.fixed.push(Object.assign({}, f, {id:nextId()}));
+        nf++;
+      }
       save(); render();
-      alert(`Imported ${nc} case(s) and ${nk} keyword(s).`);
+      alert(`Imported ${nc} case(s), ${nk} keyword(s), ${np} pending file(s) and ${nf} fixed case(s).`);
     }catch(e){ alert("Could not read that file: " + e.message); }
     ev.target.value = "";
   };
@@ -742,7 +1798,25 @@ function importData(ev){
 
 /* expose for inline handlers */
 Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,saveHearing,
-  addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc});
+  addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc,
+  switchTab,addPending,removePending,togglePendingSection,openSaveDialog,saveHitToCases,saveSelectedHits,
+  toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,editFixed,updateFixed,dismissPendingHit,
+  removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly,
+  addTask,toggleTaskDone,removeTask});
+
+/* A hit saved by an earlier build, before the bench-bracket regex was
+   corrected, never gets re-checked on its own once it's in S.hits — this
+   makes every load self-heal instead of leaving stale circuit-bench hits
+   behind forever. No-op if the lawyer has actually turned the Lahore-only
+   filter off. Runs here (not up with the other seed/migration calls) since
+   isOtherBench() depends on consts declared later in the file. */
+function pruneOtherBenchHits(){
+  if(S.settings.principalSeatOnly === false) return false;
+  const before = S.hits.length;
+  S.hits = S.hits.filter(h => !isOtherBench(h.raw || ""));
+  return S.hits.length !== before;
+}
+if(pruneOtherBenchHits()) save();
 
 render();
 </script>

@@ -149,12 +149,22 @@ class CauseListScraper(private val context: Context) {
             val row: String, val hits: List<Matcher.Hit>, val cm: Boolean, val parents: List<String>,
             val clipped: String, val hash: String, var groupHash: String = ""
         )
+        // The presiding judge is printed once per bench section (a date/bench-
+        // type header, then one or two judge lines), never on the case row
+        // itself — tracked here across rows in print order and prefixed onto
+        // whatever this section's rows turn out to match.
+        var currentJudges = mutableListOf<String>()
         val entries = rows.mapNotNull { row ->
+            if (Matcher.isSectionReset(row)) currentJudges = mutableListOf()
+            Matcher.extractJudge(row)?.let { currentJudges.add(it); return@mapNotNull null }
+
             val all = Matcher.findHits(row, probes)
             if (all.isEmpty()) return@mapNotNull null
             val cm = Matcher.isCmRow(row)
             val parents = if (cm) Matcher.cmParentRefs(row) else emptyList()
-            val clipped = if (row.length > 400) row.substring(0, 400) + "…" else row
+            val judge = currentJudges.joinToString(" & ")
+            val base = if (row.length > 400) row.substring(0, 400) + "…" else row
+            val clipped = if (judge.isNotBlank()) "[$judge] $base" else base
             Entry(row, all, cm, parents, clipped, Matcher.hashOf(sourceUrl, listDate, clipped))
         }
 

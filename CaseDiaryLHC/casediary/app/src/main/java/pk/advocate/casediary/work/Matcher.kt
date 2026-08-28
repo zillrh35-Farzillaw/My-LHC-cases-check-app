@@ -187,9 +187,12 @@ object Matcher {
     /** Circuit-bench (Bahawalpur/Multan/Rawalpindi) case numbers are bracketed
      *  and HYPHEN-delimited — "[6458-B-26]" or "[10060-26]" — confirmed against
      *  a real LHC export; Principal Seat (Lahore) rows never use brackets.
-     *  Also used for own/parent case-ref extraction — see [BRACKET_CORE]. */
-    private const val BRACKET_CORE = "\\[(\\d{2,7})(?:-[A-Za-z]{1,4})?-(\\d{2,4})\\]"
-    private const val BRACKET_CORE_NC = "\\[\\d{2,7}(?:-[A-Za-z]{1,4})?-\\d{2,4}\\]"
+     *  Also used for own/parent case-ref extraction — see [BRACKET_CORE].
+     *  Whitespace-tolerant around every delimiter: jsoup (the HTML parser used
+     *  for the background scan) can join a bracket's sub-elements with spaces
+     *  even when a plain page-to-text copy shows none. */
+    private const val BRACKET_CORE = "\\[\\s*(\\d{2,7})\\s*(?:-\\s*[A-Za-z]{1,4}\\s*)?-\\s*(\\d{2,4})\\s*\\]"
+    private const val BRACKET_CORE_NC = "\\[\\s*\\d{2,7}\\s*(?:-\\s*[A-Za-z]{1,4}\\s*)?-\\s*\\d{2,4}\\s*\\]"
     private val BRACKETED_CASE_RE = Regex(BRACKET_CORE)
 
     /**
@@ -323,6 +326,34 @@ object Matcher {
             out.add(looseCaseRef(it.groupValues[1], it.groupValues[2]))
         }
         return out
+    }
+
+    private val JUDGE_RE = Regex(
+        "^(the chief justice|(?:mr\\.?|mrs\\.?|ms\\.?)?\\s*justice\\s+[a-z][a-z .'-]*)$",
+        RegexOption.IGNORE_CASE
+    )
+    private val BENCH_HEADER_RE = Regex(
+        "\\b(single bench|divisional bench|division bench|daily single bench)\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val DATE_LINE_RE = Regex("^\\d{1,2}-\\d{1,2}-\\d{4}$")
+
+    /** True for a line that starts a new cause-list section (a date, or a
+     *  bench-type header) — the point at which a previously tracked judge
+     *  (see [extractJudge]) no longer applies. */
+    fun isSectionReset(line: String): Boolean {
+        val t = line.trim()
+        return BENCH_HEADER_RE.containsMatchIn(t) || DATE_LINE_RE.matches(t)
+    }
+
+    /** Pulls a presiding judge's name out of a line that is *only* that
+     *  designation — e.g. "Mr. Justice Khalid Ishaq" or "The Chief Justice".
+     *  The cause list prints this once per bench section, never per case row
+     *  (confirmed against a real LHC export), so callers track it across
+     *  consecutive rows — see [pk.advocate.casediary.work.CauseListScraper]. */
+    fun extractJudge(line: String): String? {
+        val m = JUDGE_RE.find(line.trim()) ?: return null
+        return m.groupValues[1].replace(Regex("\\s+"), " ").trim()
     }
 
     /** A table cell that wraps across lines (a C.M.'s "childNo" / "in" / "parentNo"

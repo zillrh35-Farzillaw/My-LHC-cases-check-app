@@ -6,16 +6,17 @@ import android.graphics.pdf.PdfDocument
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import pk.advocate.casediary.db.Case
 import pk.advocate.casediary.db.Db
 import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Builds the "Urgent Cases Report" as a real PDF, matching the lawyer's own
- * document: Sr No. / Title & No. / Court / Prayer & Remarks / Proceedings /
- * Causelist No., followed by the pending-files list. No external library —
- * drawn directly with [PdfDocument] so it works fully offline and shares
- * cleanly (WhatsApp, email, print) via a plain content:// URI.
+ * A clean "All Cases" report as a real PDF — every case being tracked, sorted
+ * Active first (soonest hearing first), then Decided, then Archived, followed
+ * by the pending files not yet fixed. No external library — drawn directly
+ * with [PdfDocument] so it works fully offline and shares cleanly (WhatsApp,
+ * email, print) via a plain content:// URI.
  */
 object ReportPdf {
 
@@ -23,11 +24,14 @@ object ReportPdf {
     private const val PAGE_H = 842
     private const val MARGIN = 32f
 
-    /** @param selectedIds when non-empty, only these fixed cases go into the report — otherwise all of them do. */
-    fun export(context: Context, selectedIds: Set<Long> = emptySet()): File {
+    fun export(context: Context): File {
         val db = Db.get(context)
-        val allFixed = db.listFixedCases()
-        val fixed = if (selectedIds.isEmpty()) allFixed else allFixed.filter { selectedIds.contains(it.id) }
+        val cases = db.listCases(null, null).sortedWith(
+            compareBy(
+                { statusRank(it.status) },
+                { if (it.nextDate > 0) it.nextDate else Long.MAX_VALUE }
+            )
+        )
         val pending = db.listPendingFiles()
 
         val doc = PdfDocument()
@@ -38,10 +42,10 @@ object ReportPdf {
         var y = MARGIN
 
         val titlePaint = TextPaint().apply { textSize = 15f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }
+        val subPaint = TextPaint().apply { textSize = 9f; color = 0xFF555555.toInt(); textAlign = Paint.Align.CENTER }
         val headPaint = TextPaint().apply { textSize = 9f; isFakeBoldText = true }
         val cellPaint = TextPaint().apply { textSize = 8.5f }
-        val boldCenter = TextPaint().apply { textSize = 11f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }
-        val notePaint = TextPaint().apply { textSize = 7.5f; color = 0xFF555555.toInt() }
+        val sectionPaint = TextPaint().apply { textSize = 11f; isFakeBoldText = true }
         val linePaint = Paint().apply { strokeWidth = 0.75f; color = 0xFF000000.toInt() }
 
         fun newPage() {
@@ -57,10 +61,12 @@ object ReportPdf {
             if (y + need > PAGE_H - MARGIN) newPage()
         }
 
-        canvas.drawText("Urgent Cases Report – Lahore High Court LHR", PAGE_W / 2f, y + 10, titlePaint)
+        canvas.drawText("CCMS — All Cases Report", PAGE_W / 2f, y + 10, titlePaint)
+        y += 16
+        canvas.drawText("Generated ${Dates.fmtStamp(System.currentTimeMillis())}", PAGE_W / 2f, y + 8, subPaint)
         y += 26
 
-        val colWidths = floatArrayOf(22f, 172f, 88f, 108f, 68f, 73f)
+        val colWidths = floatArrayOf(20f, 95f, 165f, 90f, 70f, 75f)
         val colX = FloatArray(colWidths.size)
         run {
             var x = MARGIN
@@ -92,52 +98,53 @@ object ReportPdf {
         }
 
         canvas.drawLine(MARGIN, y, tableRight, y, linePaint)
-        drawRow(
-            listOf("Sr", "Title & No. of the case", "Name of the Court", "Nature of Prayer & Remarks", "Proceedings", "Urgent Causelist No."),
-            headPaint
-        )
+        drawRow(listOf("Sr", "Case No.", "Title", "Court / Judge", "Stage", "Next Hearing"), headPaint)
 
-        if (fixed.isEmpty()) {
-            drawRow(listOf("", "No cases fixed yet", "", "", "", ""), cellPaint)
+        if (cases.isEmpty()) {
+            drawRow(listOf("", "No cases tracked yet", "", "", "", ""), cellPaint)
         } else {
-            fixed.forEachIndexed { i, f ->
+            var lastRank = -1
+            cases.forEachIndexed { i, c ->
+                val rank = statusRank(c.status)
+                if (rank != lastRank) {
+                    lastRank = rank
+                    ensureSpace(20f)
+                    y += 6
+                    canvas.drawText(statusLabel(c.status), MARGIN, y + 8, sectionPaint)
+                    y += 16
+                }
+                val courtJudge = listOf(c.court, c.judge).filter { it.isNotBlank() }.joinToString(" · ")
                 drawRow(
-                    listOf((i + 1).toString(), f.titleNo, f.court, f.prayer, f.proceedings, f.causelistNo),
+                    listOf(
+                        (i + 1).toString(),
+                        c.caseRef().ifBlank { "—" },
+                        c.title(),
+                        courtJudge,
+                        c.stage,
+                        if (c.nextDate > 0) Dates.fmt(c.nextDate) else "—"
+                    ),
                     cellPaint
                 )
             }
         }
 
-        y += 16
-        ensureSpace(30f)
-        canvas.drawText("Fixed for date", PAGE_W / 2f, y, boldCenter)
-        y += 14
-        canvas.drawText(Dates.fmt(System.currentTimeMillis()), PAGE_W / 2f, y, boldCenter)
-        y += 22
-
+        y += 20
         ensureSpace(16f)
-        canvas.drawText("Pending files yet to be fixed:", MARGIN, y, headPaint)
+        canvas.drawText("Pending files (not yet fixed):", MARGIN, y, headPaint)
         y += 14
 
-        val noteText = "(Note: These files are already supplied. Once a file is fixed and approved " +
-            "in the app, it moves into the table above and is removed from this list.)"
-        val noteWidth = (PAGE_W - MARGIN * 2).toInt()
-        val noteLayout = StaticLayout.Builder.obtain(noteText, 0, noteText.length, notePaint, noteWidth).build()
-        ensureSpace(noteLayout.height.toFloat())
-        canvas.save()
-        canvas.translate(MARGIN, y)
-        noteLayout.draw(canvas)
-        canvas.restore()
-        y += noteLayout.height + 10
-
+        val fullWidth = (PAGE_W - MARGIN * 2).toInt()
         if (pending.isEmpty()) {
             ensureSpace(14f)
             canvas.drawText("None", MARGIN, y, cellPaint)
             y += 14
         } else {
             for (p in pending) {
-                val text = "• ${p.title}" + if (p.note.isNotBlank()) "  (${p.note})" else ""
-                val sl = StaticLayout.Builder.obtain(text, 0, text.length, cellPaint, noteWidth).build()
+                val ref = p.caseRef()
+                val text = "• ${p.title}" +
+                    (if (ref.isNotBlank()) "  [$ref]" else "") +
+                    (if (p.note.isNotBlank()) "  (${p.note})" else "")
+                val sl = StaticLayout.Builder.obtain(text, 0, text.length, cellPaint, fullWidth).build()
                 ensureSpace(sl.height.toFloat() + 4)
                 canvas.save()
                 canvas.translate(MARGIN, y)
@@ -151,9 +158,21 @@ object ReportPdf {
 
         val dir = File(context.cacheDir, "shared")
         if (!dir.exists()) dir.mkdirs()
-        val outFile = File(dir, "urgent-cases-report-${Dates.isoDate(System.currentTimeMillis())}.pdf")
+        val outFile = File(dir, "ccms-all-cases-${Dates.isoDate(System.currentTimeMillis())}.pdf")
         FileOutputStream(outFile).use { doc.writeTo(it) }
         doc.close()
         return outFile
+    }
+
+    private fun statusRank(status: String): Int = when (status) {
+        Case.STATUS_ACTIVE -> 0
+        Case.STATUS_DECIDED -> 1
+        else -> 2
+    }
+
+    private fun statusLabel(status: String): String = when (status) {
+        Case.STATUS_ACTIVE -> "Active"
+        Case.STATUS_DECIDED -> "Decided"
+        else -> "Archived"
     }
 }

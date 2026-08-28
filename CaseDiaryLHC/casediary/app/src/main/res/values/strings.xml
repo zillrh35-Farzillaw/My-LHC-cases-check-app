@@ -56,7 +56,7 @@
     <string name="clear_hits">Clear all hits</string>
     <string name="remove">Remove</string>
     <string name="search_lists">Search checked lists</string>
-    <string name="export_pdf">Export report PDF</string>
+    <string name="export_pdf">Export case list PDF</string>
     <string name="add_pending">Add pending file</string>
     <string name="pending_title_hint">Case title, e.g. Ghazanfar Ali Khan vs NADRA etc.</string>
     <string name="pending_note_hint">Note (optional)</string>

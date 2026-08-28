@@ -44,7 +44,6 @@ class DiaryFragment : Fragment() {
 
     /** Transient (not persisted) selection state for bulk actions. */
     private val selectedHits = HashSet<Long>()
-    private val selectedFixed = HashSet<Long>()
     private var selectableHitIds: List<Long> = emptyList()
 
     override fun onCreateView(
@@ -83,12 +82,7 @@ class DiaryFragment : Fragment() {
                 if (!selectedHits.add(id)) selectedHits.remove(id)
                 reload()
             },
-            onToggleFixedSelect = { id ->
-                if (!selectedFixed.add(id)) selectedFixed.remove(id)
-                reload()
-            },
-            isHitSelected = { selectedHits.contains(it) },
-            isFixedSelected = { selectedFixed.contains(it) }
+            isHitSelected = { selectedHits.contains(it) }
         )
         b.list.layoutManager = LinearLayoutManager(requireContext())
         b.list.adapter = adapter
@@ -219,12 +213,6 @@ class DiaryFragment : Fragment() {
         b.empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         b.status.text = "Last check: ${Dates.fmtStamp(prefs.lastCheckAt)}" +
             if (prefs.lastCheckResult.isBlank()) "" else " — ${prefs.lastCheckResult}"
-
-        b.btnExportPdf.text = if (selectedFixed.isNotEmpty()) {
-            "Export ${selectedFixed.size} selected as PDF"
-        } else {
-            "Export report PDF"
-        }
 
         if (selectedHits.isNotEmpty()) {
             b.btnSaveSelected.visibility = View.VISIBLE
@@ -426,7 +414,6 @@ class DiaryFragment : Fragment() {
             }
             .setNeutralButton("Remove") { _, _ ->
                 db.deleteFixedCase(id)
-                selectedFixed.remove(id)
                 reload()
             }
             .setNegativeButton("Cancel", null)
@@ -488,7 +475,7 @@ class DiaryFragment : Fragment() {
 
     private fun exportPdf() {
         try {
-            val file = ReportPdf.export(requireContext(), selectedFixed)
+            val file = ReportPdf.export(requireContext())
             val uri = FileProvider.getUriForFile(
                 requireContext(),
                 "${requireContext().packageName}.fileprovider",
@@ -580,9 +567,7 @@ class DiaryAdapter(
     private val onSaveHit: (DiaryRow.Hit) -> Unit,
     private val onRemoveHit: (DiaryRow.Hit) -> Unit,
     private val onToggleHitSelect: (Long) -> Unit,
-    private val onToggleFixedSelect: (Long) -> Unit,
-    private val isHitSelected: (Long) -> Boolean,
-    private val isFixedSelected: (Long) -> Boolean
+    private val isHitSelected: (Long) -> Boolean
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = ArrayList<DiaryRow>()
@@ -656,8 +641,7 @@ class DiaryAdapter(
             }
             is DiaryRow.FixedRow -> {
                 val v = holder as FixedVH
-                val mark = if (isFixedSelected(row.id)) "☑" else "☐"
-                v.b.headline.text = "$mark ${row.srNo}. ${row.titleNo}"
+                v.b.headline.text = "${row.srNo}. ${row.titleNo}"
                 v.b.detail.text = listOfNotNull(
                     row.court.takeIf { it.isNotBlank() },
                     row.prayer.takeIf { it.isNotBlank() },
@@ -665,9 +649,7 @@ class DiaryAdapter(
                     row.causelistNo.takeIf { it.isNotBlank() }?.let { "Causelist No. $it" }
                 ).joinToString(" · ")
                 v.b.root.setOnClickListener { onClick(row) }
-                v.b.root.setOnLongClickListener { onToggleFixedSelect(row.id); true }
-                v.b.removeBtn.text = "Select for export"
-                v.b.removeBtn.setOnClickListener { onToggleFixedSelect(row.id) }
+                v.b.removeBtn.visibility = View.GONE
             }
         }
     }

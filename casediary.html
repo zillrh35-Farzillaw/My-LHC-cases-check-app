@@ -357,6 +357,10 @@ const DEFAULT_KEYWORDS = [
   {term:"National Database", kind:"OTHER"},
   {term:"Identity Card", kind:"OTHER"},
   {term:"Citizenship", kind:"OTHER"},
+  {term:"Munir Afsar", kind:"ADVOCATE"},
+  {term:"Ashba Kamran", kind:"ADVOCATE"},
+  {term:"Fizza Shahid", kind:"ADVOCATE"},
+  {term:"Fiza Shahid", kind:"ADVOCATE"},
 ];
 function seedDefaultKeywords(){
   const have = new Set(S.keys.map(k=>normalize(k.term)));
@@ -543,8 +547,11 @@ function findHits(row, probes){
    (Lahore) rows never use brackets. That's a far more reliable signal than
    the bench name showing up in the text, so it's checked first. Also used
    for own/parent case-ref extraction — see BRACKET_CORE below. */
-const BRACKET_CORE = "\\[(\\d{2,7})(?:-[A-Za-z]{1,4})?-(\\d{2,4})\\]";
-const BRACKET_CORE_NC = "\\[\\d{2,7}(?:-[A-Za-z]{1,4})?-\\d{2,4}\\]";
+/* Whitespace-tolerant around every delimiter: the app's own HTML parser
+   (jsoup) can join a bracket's sub-elements with spaces even when a plain
+   page-to-text copy shows none — "[ 6458 - B - 26 ]" must still match. */
+const BRACKET_CORE = "\\[\\s*(\\d{2,7})\\s*(?:-\\s*[A-Za-z]{1,4}\\s*)?-\\s*(\\d{2,4})\\s*\\]";
+const BRACKET_CORE_NC = "\\[\\s*\\d{2,7}\\s*(?:-\\s*[A-Za-z]{1,4}\\s*)?-\\s*\\d{2,4}\\s*\\]";
 const BRACKETED_CASE_RE = new RegExp(BRACKET_CORE);
 function isOtherBench(row){
   if(BRACKETED_CASE_RE.test(row)) return true;
@@ -634,6 +641,25 @@ function cmParentRefs(row){
   const m3 = row.match(BRACKET_CM_RE);
   if(m3) out.push(looseCaseRef(m3[1], m3[2]));
   return out;
+}
+const JUDGE_RE = /^(the chief justice|(?:mr\.?|mrs\.?|ms\.?)?\s*justice\s+[a-z][a-z .'-]*)$/i;
+const BENCH_HEADER_RE = /\b(single bench|divisional bench|division bench|daily single bench)\b/i;
+const DATE_LINE_RE = /^\d{1,2}-\d{1,2}-\d{4}$/;
+/* True for a line that starts a new cause-list section (a date, or a
+   bench-type header) — the point at which a previously tracked judge
+   (see extractJudge) no longer applies. */
+function isSectionReset(line){
+  const t = line.trim();
+  return BENCH_HEADER_RE.test(t) || DATE_LINE_RE.test(t);
+}
+/* Pulls a presiding judge's name out of a line that is *only* that
+   designation — e.g. "Mr. Justice Khalid Ishaq" or "The Chief Justice". The
+   cause list prints this once per bench section, never per case row
+   (confirmed against a real LHC export), so callers track it across
+   consecutive rows — see scanPaste(). */
+function extractJudge(line){
+  const m = line.trim().match(JUDGE_RE);
+  return m ? m[1].replace(/\s+/g," ").trim() : null;
 }
 /* A table cell that wraps across lines (a C.M.'s "childNo" / "in" / "parentNo"
    cross-reference) can arrive as separate physical lines from a page-to-text
@@ -775,7 +801,6 @@ function renderCases(){
 
 /* Transient (not saved) selection state for bulk actions. */
 let selectedHits = new Set();
-let selectedFixed = new Set();
 
 function togglePrincipalSeatOnly(){
   S.settings.principalSeatOnly = document.getElementById("principalSeatOnly").checked;
@@ -879,22 +904,18 @@ function renderDiary(){
   if(S.fixed.length){
     html += `<h2>Fixed cases — My Cases directory<span class="n">${S.fixed.length}</span></h2>`;
     html += `<div class="card tblwrap"><table class="tbl">
-      <thead><tr><th></th><th>#</th><th>Title &amp; No.</th><th>Court</th><th>Prayer / Remarks</th>
+      <thead><tr><th>#</th><th>Title &amp; No.</th><th>Court</th><th>Prayer / Remarks</th>
         <th>Proceedings</th><th>Causelist No.</th><th></th></tr></thead>
       <tbody>${S.fixed.map((f,i)=>`<tr>
-          <td><input type="checkbox" class="fixedcheck" style="width:auto" ${selectedFixed.has(f.id)?"checked":""}
-            onclick="toggleFixedSelect(${f.id})"></td>
           <td>${i+1}</td>
           <td class="click" onclick="editFixed(${f.id})">${esc(f.titleNo)}</td>
           <td>${esc(f.court)}</td>
           <td>${esc(f.prayer)}</td><td>${esc(f.proceedings)}</td><td>${esc(f.causelistNo)}</td>
           <td><span class="rmv" onclick="removeFixed(${f.id})">Remove</span></td>
         </tr>`).join("")}</tbody>
-    </table></div>
-    <button class="btn2" style="width:100%;margin-top:8px" onclick="exportReportPdf()">
-      ${selectedFixed.size ? `Export ${selectedFixed.size} selected as PDF` : `Export all ${S.fixed.length} as PDF`}
-    </button>`;
+    </table></div>`;
   }
+  html += `<button class="btn2" style="width:100%;margin-top:8px" onclick="exportReportPdf()">Export case list PDF</button>`;
 
   if(mine.length){
     html += `<h2>My saved cases — matched today<span class="n">${mine.length}</span></h2>` +
@@ -1199,10 +1220,6 @@ function clearSelectedHits(){
   save(); render();
 }
 
-function toggleFixedSelect(id){
-  if(selectedFixed.has(id)) selectedFixed.delete(id); else selectedFixed.add(id);
-  render();
-}
 function editFixed(id){
   const f = S.fixed.find(x=>x.id===id);
   if(!f) return;
@@ -1246,29 +1263,45 @@ function removeHit(hash){
 function removeFixed(id){
   if(!confirm("Remove this case from My Cases?")) return;
   S.fixed = S.fixed.filter(f=>f.id!==id);
-  selectedFixed.delete(id);
   save(); render();
 }
 
 /* --------------------------------------------------------------- pdf/print */
+const STATUS_RANK = {ACTIVE:0, DECIDED:1, ARCHIVED:2};
+const STATUS_LABEL = {ACTIVE:"Active", DECIDED:"Decided", ARCHIVED:"Archived"};
 function buildPrintReport(){
-  const list = selectedFixed.size ? S.fixed.filter(f=>selectedFixed.has(f.id)) : S.fixed;
-  const rows = list.map((f,i)=>`<tr><td>${i+1}</td><td>${esc(f.titleNo)}</td>
-    <td>${esc(f.court)}</td><td>${esc(f.prayer)}</td><td>${esc(f.proceedings)}</td>
-    <td>${esc(f.causelistNo)}</td></tr>`).join("");
-  const pendingLis = S.pending.map(p=>
-    `<li>${esc(p.title)}${p.note ? ` <i>(${esc(p.note)})</i>` : ""}</li>`).join("");
+  const list = S.cases.slice().sort((a,b)=>{
+    const ra = STATUS_RANK[a.status] ?? 2, rb = STATUS_RANK[b.status] ?? 2;
+    if(ra !== rb) return ra - rb;
+    const na = a.nextDate || Infinity, nb = b.nextDate || Infinity;
+    return na - nb;
+  });
+  let rows = "";
+  let lastRank = -1;
+  list.forEach((c,i)=>{
+    const rank = STATUS_RANK[c.status] ?? 2;
+    if(rank !== lastRank){
+      lastRank = rank;
+      rows += `<tr><td colspan="6" style="font-weight:700;border:none;padding-top:14px">${STATUS_LABEL[c.status] || "Other"}</td></tr>`;
+    }
+    const courtJudge = [c.court, c.judge].filter(Boolean).join(" · ");
+    rows += `<tr><td>${i+1}</td><td>${esc(caseRef(c) || "—")}</td><td>${esc(caseTitle(c))}</td>
+      <td>${esc(courtJudge)}</td><td>${esc(c.stage||"")}</td>
+      <td>${c.nextDate ? esc(fmt(c.nextDate)) : "—"}</td></tr>`;
+  });
+  const pendingLis = S.pending.map(p=>{
+    const ref = p && p.caseNo ? [p.caseType, p.caseNo].filter(Boolean).join(" ").trim() + (p.caseYear?"/"+p.caseYear:"") : "";
+    return `<li>${esc(p.title)}${ref ? ` [${esc(ref)}]` : ""}${p.note ? ` <i>(${esc(p.note)})</i>` : ""}</li>`;
+  }).join("");
   document.getElementById("printReport").innerHTML = `
-    <h1>Urgent Cases Report – Lahore High Court LHR</h1>
+    <h1>CCMS — All Cases Report</h1>
+    <p class="fixedFor" style="font-weight:400">Generated ${esc(stamp(Date.now()))}</p>
     <table>
-      <thead><tr><th>Sr No.</th><th>Title &amp; No. of the case</th><th>Name of the Court</th>
-        <th>Nature of Prayer &amp; Remarks</th><th>Proceedings</th><th>Urgent Causelist No.</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="6" style="text-align:center">No cases fixed yet</td></tr>`}</tbody>
+      <thead><tr><th>Sr</th><th>Case No.</th><th>Title</th>
+        <th>Court / Judge</th><th>Stage</th><th>Next Hearing</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" style="text-align:center">No cases tracked yet</td></tr>`}</tbody>
     </table>
-    <p class="fixedFor">Fixed for date<br>${esc(fmt(Date.now()))}</p>
-    <h2>Pending files yet to be fixed:</h2>
-    <p class="note">(Note: These files are already supplied. Once a file is fixed and
-      approved in the app, it moves into the table above and is removed from this list.)</p>
+    <h2>Pending files (not yet fixed):</h2>
     <ul>${pendingLis || "<li>None</li>"}</ul>`;
 }
 function exportReportPdf(){
@@ -1356,14 +1389,25 @@ function scanPaste(){
   let freshRows = 0, matchedRows = 0, foldedCm = 0;
 
   // Pass 1: find every matched row and compute its own identity (hash) and,
-  // for C.M./application rows, which main case they belong to.
+  // for C.M./application rows, which main case they belong to. The presiding
+  // judge is printed once per bench section (a date/bench-type header, then
+  // one or two judge lines), never on the case row itself — tracked here
+  // across rows in print order and prefixed onto whatever this section's
+  // rows turn out to match.
   const entries = [];
+  let currentJudges = [];
   for(const row of rows){
+    if(isSectionReset(row)) currentJudges = [];
+    const judgeLine = extractJudge(row);
+    if(judgeLine){ currentJudges.push(judgeLine); continue; }
+
     const hs = findHits(row, probes);
     if(!hs.length) continue;
     const cm = isCmRow(row);
     const parents = cm ? cmParentRefs(row) : [];
-    const clipped = row.length > 400 ? row.slice(0,400) + "…" : row;
+    const judge = currentJudges.join(" & ");
+    const base = row.length > 400 ? row.slice(0,400) + "…" : row;
+    const clipped = judge ? `[${judge}] ${base}` : base;
     entries.push({row, hs, cm, parents, clipped, hash: hashOf(["paste", clipped])});
   }
 
@@ -1739,7 +1783,7 @@ function importData(ev){
 Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,saveHearing,
   addKey,delKey,toggleKey,scanPaste,clearHits,exportData,importData,closeModal,openLhc,
   switchTab,addPending,removePending,togglePendingSection,openSaveDialog,saveHitToCases,saveSelectedHits,
-  toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,toggleFixedSelect,editFixed,updateFixed,dismissPendingHit,
+  toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,editFixed,updateFixed,dismissPendingHit,
   removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly,
   addTask,toggleTaskDone,removeTask});
 

@@ -392,4 +392,32 @@ class MatcherTest {
     fun `parseCaseRef returns null when there is no case number in the text`() {
         assertEquals(null, Matcher.parseCaseRef("Someone vs State, no case number here"))
     }
+
+    // ------------------------------------------------------- judge extraction
+
+    @Test
+    fun `extractJudge pulls a judge name from its own designation line`() {
+        assertEquals("Mr. Justice Khalid Ishaq", Matcher.extractJudge("Mr. Justice Khalid Ishaq"))
+        assertEquals("Justice Shireen Imran", Matcher.extractJudge("Justice Shireen Imran"))
+        assertEquals("The Chief Justice", Matcher.extractJudge("The Chief Justice"))
+    }
+
+    @Test
+    fun `extractJudge ignores the courtroom block name and ordinary rows`() {
+        assertEquals(null, Matcher.extractJudge("[ Justice A.R. Cornelius Block - Court 18 ]"))
+        assertEquals(null, Matcher.extractJudge("Court No. [ 1 ]"))
+        assertEquals(
+            null,
+            Matcher.extractJudge("1 | Writ - Misc. Writ - Ombudsman | 48064/26 | Someone Vs State")
+        )
+    }
+
+    @Test
+    fun `isSectionReset fires on a date or bench-type header but not on a judge line`() {
+        assertTrue(Matcher.isSectionReset("Single Bench"))
+        assertTrue(Matcher.isSectionReset("Divisional Bench"))
+        assertTrue(Matcher.isSectionReset("Daily Single Bench Urgent Cause List [MULTAN]"))
+        assertTrue(Matcher.isSectionReset("27-08-2026"))
+        assertFalse(Matcher.isSectionReset("Mr. Justice Khalid Ishaq"))
+    }
 }

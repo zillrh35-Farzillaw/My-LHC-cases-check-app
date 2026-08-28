@@ -361,7 +361,11 @@ class Db private constructor(context: Context) :
             "NADRA" to WatchTerm.KIND_OTHER,
             "National Database" to WatchTerm.KIND_OTHER,
             "Identity Card" to WatchTerm.KIND_OTHER,
-            "Citizenship" to WatchTerm.KIND_OTHER
+            "Citizenship" to WatchTerm.KIND_OTHER,
+            "Munir Afsar" to WatchTerm.KIND_ADVOCATE,
+            "Ashba Kamran" to WatchTerm.KIND_ADVOCATE,
+            "Fizza Shahid" to WatchTerm.KIND_ADVOCATE,
+            "Fiza Shahid" to WatchTerm.KIND_ADVOCATE
         )
         val existing = HashSet<String>()
         db.rawQuery("SELECT term FROM watch_terms", null).use { cur ->

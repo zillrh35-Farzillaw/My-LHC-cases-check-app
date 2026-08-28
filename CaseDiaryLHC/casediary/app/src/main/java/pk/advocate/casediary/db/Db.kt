@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import pk.advocate.casediary.work.Matcher
 
 /**
  * Plain SQLite. No ORM, no annotation processing — everything the app stores
@@ -807,6 +808,27 @@ class Db private constructor(context: Context) :
     fun pruneFixtures(days: Int = 60) {
         val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
         writableDatabase.delete("fixtures", "found_at < ?", arrayOf(cutoff.toString()))
+    }
+
+    /** Retroactively removes any already-stored fixture that fails the
+     *  CURRENT bench filter. A fixture saved by an earlier build (before a
+     *  bench-detection fix shipped) never gets re-checked on its own once
+     *  it's in the table — this makes every future scan self-heal instead of
+     *  leaving stale circuit-bench hits behind forever. No-op if the lawyer
+     *  has actually turned the Lahore-only filter off. */
+    fun pruneOtherBenchFixtures(principalSeatOnly: Boolean) {
+        if (!principalSeatOnly) return
+        val toDelete = ArrayList<Long>()
+        readableDatabase.query("fixtures", arrayOf("id", "raw"), null, null, null, null, null).use { cur ->
+            val idIdx = cur.getColumnIndexOrThrow("id")
+            val rawIdx = cur.getColumnIndexOrThrow("raw")
+            while (cur.moveToNext()) {
+                if (Matcher.isOtherBench(cur.getString(rawIdx).orEmpty())) toDelete.add(cur.getLong(idIdx))
+            }
+        }
+        if (toDelete.isNotEmpty()) {
+            writableDatabase.delete("fixtures", "id IN (${toDelete.joinToString(",")})", null)
+        }
     }
 
     // ---------------------------------------------------------- watch terms

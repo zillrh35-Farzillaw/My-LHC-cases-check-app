@@ -1787,6 +1787,20 @@ Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,
   removeHit,removeFixed,exportReportPdf,togglePriority,searchScans,togglePrincipalSeatOnly,
   addTask,toggleTaskDone,removeTask});
 
+/* A hit saved by an earlier build, before the bench-bracket regex was
+   corrected, never gets re-checked on its own once it's in S.hits — this
+   makes every load self-heal instead of leaving stale circuit-bench hits
+   behind forever. No-op if the lawyer has actually turned the Lahore-only
+   filter off. Runs here (not up with the other seed/migration calls) since
+   isOtherBench() depends on consts declared later in the file. */
+function pruneOtherBenchHits(){
+  if(S.settings.principalSeatOnly === false) return false;
+  const before = S.hits.length;
+  S.hits = S.hits.filter(h => !isOtherBench(h.raw || ""));
+  return S.hits.length !== before;
+}
+if(pruneOtherBenchHits()) save();
+
 render();
 </script>
 </body>

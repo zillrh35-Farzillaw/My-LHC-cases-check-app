@@ -120,6 +120,10 @@ class CauseListScraper(private val context: Context) {
 
         val prefs = Prefs(context)
         val rows = if (prefs.principalSeatOnly) merged.filterNot { Matcher.isOtherBench(it) } else merged
+        // Rows saved by an earlier build, before the bench-bracket regex was
+        // corrected, never get re-checked on their own — clean those up on
+        // every scan so a fix here doesn't leave old stale hits behind.
+        db.pruneOtherBenchFixtures(prefs.principalSeatOnly)
         // Section-level pause: the lawyer can turn off pending-file matching for
         // the whole list at once (e.g. while tidying it up) without deleting it.
         val activePending = if (prefs.pendingFilesEnabled) pending else emptyList()

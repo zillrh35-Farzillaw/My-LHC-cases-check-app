@@ -9,7 +9,6 @@ import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
-import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -25,7 +24,6 @@ import pk.advocate.casediary.db.FixedCase
 import pk.advocate.casediary.db.Fixture
 import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Dates
-import pk.advocate.casediary.util.ReportPdf
 
 /**
  * One combined feed: pending-file matches, the fixed-cases report (= "My
@@ -92,7 +90,6 @@ class DiaryFragment : Fragment() {
             startActivity(Intent(requireContext(), BrowserActivity::class.java))
         }
         b.btnSearch.setOnClickListener { searchDialog() }
-        b.btnExportPdf.setOnClickListener { exportPdf() }
         b.btnSaveSelected.setOnClickListener { saveSelectedHits() }
         b.btnSelectAll.setOnClickListener { selectAllHits() }
         b.btnClearSelected.setOnClickListener { confirmClearSelected() }
@@ -498,30 +495,6 @@ class DiaryFragment : Fragment() {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { runSearch() }
         }
         dialog.show()
-    }
-
-    private fun exportPdf() {
-        try {
-            val file = ReportPdf.export(requireContext())
-            val uri = FileProvider.getUriForFile(
-                requireContext(),
-                "${requireContext().packageName}.fileprovider",
-                file
-            )
-            val send = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, file.name)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(send, "Share urgent cases report"))
-        } catch (e: Exception) {
-            Snackbar.make(
-                b.root,
-                "Export failed: ${e.message ?: "unknown error"}",
-                Snackbar.LENGTH_LONG
-            ).show()
-        }
     }
 
     private fun confirmClear() {

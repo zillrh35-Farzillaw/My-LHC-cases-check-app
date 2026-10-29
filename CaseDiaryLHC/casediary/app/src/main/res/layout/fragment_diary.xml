@@ -46,15 +46,6 @@
             android:layout_weight="1"
             android:text="@string/search_lists"
             android:textSize="11sp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnExportPdf"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/export_pdf"
-            android:textSize="11sp" />
     </LinearLayout>
 
     <TextView

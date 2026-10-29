@@ -1223,8 +1223,9 @@ class Db private constructor(context: Context) :
         readableDatabase.rawQuery("SELECT COUNT(*) FROM scan_rows", null)
             .use { cur -> if (cur.moveToFirst()) cur.getInt(0) else 0 }
 
-    /** Bounded to a few days — this is a search convenience, not a permanent archive. */
-    fun pruneScanRows(days: Int = 3) {
+    /** A same-day search convenience, not a permanent archive — once a new day's
+     *  scan lands, the previous day's rows age out so they stop cluttering search. */
+    fun pruneScanRows(days: Int = 1) {
         val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
         writableDatabase.delete("scan_rows", "scanned_at < ?", arrayOf(cutoff.toString()))
     }

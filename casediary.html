@@ -12,15 +12,21 @@
     --text:#16181A; --muted:#5C6469; --line:#E3E5E4; --danger:#B3261E;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
   body{margin:0;background:var(--bg);color:var(--text);
     font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
     padding-bottom:76px}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    *{animation-duration:.001s !important;transition-duration:.001s !important}
+  }
   header{background:var(--brand);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:20}
   header h1{margin:0;font-size:17px;font-weight:600}
   header .sub{font-size:12px;opacity:.8;margin-top:2px}
   main{padding:12px}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
-    padding:14px;margin-bottom:12px}
+    padding:14px;margin-bottom:12px;animation:fadeIn .25s ease;transition:background-color .15s ease}
   .card.click{cursor:pointer}
   .card.click:active{background:#f2f5f3}
   h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand);
@@ -33,7 +39,9 @@
   input:focus,textarea:focus,select:focus{outline:2px solid var(--brand-light);border-color:var(--brand)}
   .row{display:flex;gap:8px}
   .row>*{flex:1;min-width:0}
-  button{font:inherit;border:0;border-radius:10px;padding:11px 14px;cursor:pointer}
+  button{font:inherit;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
+    transition:background-color .15s ease,transform .1s ease,opacity .15s ease}
+  button:active{transform:scale(.97)}
   .btn{background:var(--brand);color:#fff;font-weight:600}
   .btn:active{background:var(--brand-dark)}
   .btn2{background:var(--brand-light);color:var(--brand-dark);font-weight:600}
@@ -47,7 +55,8 @@
   .pill.warn{background:#FDECD9;color:#8A4B08}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .chip{background:var(--brand-light);color:var(--brand-dark);border-radius:999px;
-    padding:6px 12px;font-size:13px;display:flex;align-items:center;gap:8px}
+    padding:6px 12px;font-size:13px;display:flex;align-items:center;gap:8px;
+    transition:background-color .15s ease,color .15s ease}
   .chip.off{background:#eceeed;color:#7a8380}
   .chip b{font-weight:600}
   .chip .x{cursor:pointer;font-weight:700;opacity:.6}
@@ -55,7 +64,9 @@
   .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;
     border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
   .tabs button{flex:1;background:none;color:var(--muted);font-size:11px;padding:9px 4px 11px;
-    display:flex;flex-direction:column;align-items:center;gap:3px;border-radius:0}
+    display:flex;flex-direction:column;align-items:center;gap:3px;border-radius:0;
+    transition:color .15s ease}
+  .tabs button:active{transform:none}
   .tabs button.on{color:var(--brand);font-weight:700}
   .tabs svg{width:22px;height:22px;fill:currentColor}
   .empty{text-align:center;color:var(--muted);padding:38px 20px;font-size:14px;line-height:1.6}
@@ -713,6 +724,10 @@ function todayStart(){ return startOfDay(Date.now()); }
 function plusDays(ms,n){ const d=new Date(ms); d.setDate(d.getDate()+n); return d.getTime(); }
 function fmt(ms){ if(!ms) return "—"; const d=new Date(ms);
   return `${String(d.getDate()).padStart(2,"0")} ${MON[d.getMonth()]} ${d.getFullYear()}`; }
+function sameDay(a, b){
+  const da = new Date(a), db = new Date(b);
+  return da.getFullYear()===db.getFullYear() && da.getMonth()===db.getMonth() && da.getDate()===db.getDate();
+}
 function fmtDay(ms){ if(!ms) return "—"; return DAY[new Date(ms).getDay()] + ", " + fmt(ms); }
 function stamp(ms){ if(!ms) return "never"; const d=new Date(ms);
   return fmt(ms) + ", " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); }
@@ -1600,6 +1615,10 @@ function scanPaste(){
 
   S.scans = S.scans || [];
   S.scans.unshift({id:nextId(), at:now, rows: rows.map(r=>r.length>300?r.slice(0,300)+"…":r)});
+  // "Search checked lists" is a same-day convenience, not an archive — once a
+  // scan lands on a new calendar day, drop every scan from an earlier day so
+  // yesterday's list doesn't keep cluttering today's search.
+  S.scans = S.scans.filter(s => sameDay(s.at, now));
   if(S.scans.length > 15) S.scans.length = 15;
 
   save();

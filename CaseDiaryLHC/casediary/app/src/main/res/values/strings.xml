@@ -4,6 +4,7 @@
     <string name="tab_diary">Diary</string>
     <string name="tab_pending">Pending</string>
     <string name="tab_tasks">Tasks</string>
+    <string name="tab_judgments">Judgments</string>
     <string name="tab_settings">Settings</string>
 
     <string name="ch_fixtures">Cause list alerts</string>
@@ -17,6 +18,7 @@
 
     <string name="add_case">Add case</string>
     <string name="edit_case">Edit case</string>
+    <string name="edit">Edit</string>
     <string name="save">Save</string>
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
@@ -78,6 +80,18 @@
     <string name="ch_tasks">Task deadlines</string>
     <string name="ch_tasks_desc">Alerts you when a task assigned by a senior or officer is due.</string>
     <string name="notif_task_due">Task due: %1$s</string>
+
+    <string name="add_judgment">Add judgment</string>
+    <string name="judgment_title_hint">Case title, e.g. Imtiaz Ahmed vs NADRA</string>
+    <string name="judgment_citation_hint">Citation, e.g. 2023 CLC 456 Lahore</string>
+    <string name="judgment_court_hint">Court</string>
+    <string name="judgment_year_hint">Year</string>
+    <string name="judgment_principle_hint">Principle / holding</string>
+    <string name="judgment_notes_hint">Your notes (optional)</string>
+    <string name="judgment_tags_hint">Tags, comma-separated (optional)</string>
+    <string name="judgment_search_hint">Search by title, citation, principle, notes or tag…</string>
+    <string name="empty_judgments">No judgments saved yet.\nAdd one above — this is your own reference library; nothing here is fetched automatically.</string>
+    <string name="empty_judgment_search">Nothing matches that search.</string>
 
     <string name="settings_watch">Keywords to watch</string>
     <string name="settings_watch_desc">Your name as it appears in cause lists, party names, and anything else worth catching. All matching is done on your phone. NADRA, National Database, Identity Card and Citizenship are watched by default and locked on. Long-press any keyword you add to mark it Primary.</string>

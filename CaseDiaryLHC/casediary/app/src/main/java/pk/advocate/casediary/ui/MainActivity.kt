@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.nav_diary -> show(TAB_DIARY)
                 R.id.nav_pending -> show(TAB_PENDING)
                 R.id.nav_tasks -> show(TAB_TASKS)
+                R.id.nav_judgments -> show(TAB_JUDGMENTS)
                 R.id.nav_settings -> show(TAB_SETTINGS)
                 else -> false
             }
@@ -68,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         b.bottomNav.selectedItemId = when (tab) {
             TAB_PENDING -> R.id.nav_pending
             TAB_TASKS -> R.id.nav_tasks
+            TAB_JUDGMENTS -> R.id.nav_judgments
             TAB_SETTINGS -> R.id.nav_settings
             else -> R.id.nav_diary
         }
@@ -78,6 +80,7 @@ class MainActivity : AppCompatActivity() {
         val fragment: Fragment = when (tab) {
             TAB_PENDING -> PendingFragment()
             TAB_TASKS -> TasksFragment()
+            TAB_JUDGMENTS -> JudgmentsFragment()
             TAB_SETTINGS -> SettingsFragment()
             else -> DiaryFragment()
         }
@@ -88,6 +91,7 @@ class MainActivity : AppCompatActivity() {
         b.toolbar.title = when (tab) {
             TAB_PENDING -> getString(R.string.tab_pending)
             TAB_TASKS -> getString(R.string.tab_tasks)
+            TAB_JUDGMENTS -> getString(R.string.tab_judgments)
             TAB_SETTINGS -> getString(R.string.tab_settings)
             else -> getString(R.string.app_name)
         }
@@ -105,6 +109,7 @@ class MainActivity : AppCompatActivity() {
         const val TAB_DIARY = "diary"
         const val TAB_PENDING = "pending"
         const val TAB_TASKS = "tasks"
+        const val TAB_JUDGMENTS = "judgments"
         const val TAB_SETTINGS = "settings"
     }
 }

@@ -151,6 +151,22 @@ class Db private constructor(context: Context) :
             )
             """.trimIndent()
         )
+        db.execSQL(
+            """
+            CREATE TABLE judgments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                citation TEXT NOT NULL DEFAULT '',
+                court TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                principle TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT 'manual',
+                added_at INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent()
+        )
         createIndexes(db)
         seedSources(db)
         seedDefaultKeywords(db)
@@ -264,6 +280,24 @@ class Db private constructor(context: Context) :
             try {
                 db.execSQL("ALTER TABLE fixed_cases ADD COLUMN hearing_date TEXT NOT NULL DEFAULT ''")
             } catch (_: Exception) { /* already present */ }
+        }
+        if (oldVersion < 9) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS judgments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    citation TEXT NOT NULL DEFAULT '',
+                    court TEXT NOT NULL DEFAULT '',
+                    year TEXT NOT NULL DEFAULT '',
+                    principle TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    added_at INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
         }
         createIndexes(db)
     }
@@ -1012,6 +1046,63 @@ class Db private constructor(context: Context) :
         return out
     }
 
+    fun addJudgment(j: Judgment): Long {
+        val cv = ContentValues().apply {
+            put("title", j.title)
+            put("citation", j.citation)
+            put("court", j.court)
+            put("year", j.year)
+            put("principle", j.principle)
+            put("notes", j.notes)
+            put("tags", j.tags.joinToString(","))
+            put("source", j.source.ifBlank { "manual" })
+            put("added_at", if (j.addedAt == 0L) System.currentTimeMillis() else j.addedAt)
+        }
+        return writableDatabase.insert("judgments", null, cv)
+    }
+
+    /** Only the fields the edit dialog exposes — source and added_at are set once at creation. */
+    fun updateJudgment(j: Judgment) {
+        val cv = ContentValues().apply {
+            put("title", j.title)
+            put("citation", j.citation)
+            put("court", j.court)
+            put("year", j.year)
+            put("principle", j.principle)
+            put("notes", j.notes)
+            put("tags", j.tags.joinToString(","))
+        }
+        writableDatabase.update("judgments", cv, "id=?", arrayOf(j.id.toString()))
+    }
+
+    fun deleteJudgment(id: Long) {
+        writableDatabase.delete("judgments", "id=?", arrayOf(id.toString()))
+    }
+
+    fun listJudgments(): List<Judgment> {
+        val out = ArrayList<Judgment>()
+        readableDatabase.query("judgments", null, null, null, null, null, "added_at DESC").use { cur ->
+            while (cur.moveToNext()) out.add(readJudgment(cur))
+        }
+        return out
+    }
+
+    private fun readJudgment(cur: Cursor): Judgment {
+        val rawTags = cur.getString(cur.getColumnIndexOrThrow("tags"))
+        return Judgment(
+            id = cur.getLong(cur.getColumnIndexOrThrow("id")),
+            title = cur.getString(cur.getColumnIndexOrThrow("title")),
+            citation = cur.getString(cur.getColumnIndexOrThrow("citation")),
+            court = cur.getString(cur.getColumnIndexOrThrow("court")),
+            year = cur.getString(cur.getColumnIndexOrThrow("year")),
+            principle = cur.getString(cur.getColumnIndexOrThrow("principle")),
+            notes = cur.getString(cur.getColumnIndexOrThrow("notes")),
+            tags = if (rawTags.isNullOrBlank()) emptyList() else rawTags.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+            source = cur.getString(cur.getColumnIndexOrThrow("source")),
+            addedAt = cur.getLong(cur.getColumnIndexOrThrow("added_at"))
+        )
+    }
+
     private fun readTask(cur: Cursor) = LawTask(
         id = cur.getLong(cur.getColumnIndexOrThrow("id")),
         title = cur.getString(cur.getColumnIndexOrThrow("title")),
@@ -1140,7 +1231,7 @@ class Db private constructor(context: Context) :
 
     companion object {
         private const val NAME = "casediary.db"
-        private const val VERSION = 8
+        private const val VERSION = 9
 
         @Volatile
         private var instance: Db? = null

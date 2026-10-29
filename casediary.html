@@ -262,6 +262,36 @@
     <div id="taskList"></div>
   </section>
 
+  <!-- ========================== JUDGMENTS =========================== -->
+  <section id="tab-judgments" class="hidden">
+    <div class="card">
+      <b style="font-size:14px">Add a judgment / citation</b>
+      <div class="note">
+        Your own reference library — paste in a judgment or citation you want to remember,
+        with a short note on why it matters, and find it again later by searching or by tag.
+        Nothing here is fetched automatically; only what you add shows up.
+      </div>
+      <label>Case title</label>
+      <input id="newJudgmentTitle" placeholder="e.g. Imtiaz Ahmed vs NADRA" autocomplete="off">
+      <label>Citation</label>
+      <input id="newJudgmentCitation" placeholder="e.g. 2023 CLC 456 Lahore" autocomplete="off">
+      <div class="row">
+        <div><label>Court</label><input id="newJudgmentCourt" placeholder="e.g. Lahore High Court"></div>
+        <div><label>Year</label><input id="newJudgmentYear" placeholder="2024" inputmode="numeric"></div>
+      </div>
+      <label>Principle / holding</label>
+      <textarea id="newJudgmentPrinciple" placeholder="The key point this judgment is useful for"></textarea>
+      <label>Your notes (optional)</label>
+      <textarea id="newJudgmentNotes" placeholder="Anything else worth remembering"></textarea>
+      <label>Tags (comma-separated, optional)</label>
+      <input id="newJudgmentTags" placeholder="e.g. nadra, citizenship, cnic" autocomplete="off">
+      <button class="btn2" style="width:100%;margin-top:10px" onclick="addJudgment()">Add judgment</button>
+    </div>
+    <input id="judgmentSearch" placeholder="Search judgments by title, citation, principle or tag…" style="margin:12px 0">
+    <div id="judgmentTagChips"></div>
+    <div id="judgmentList"></div>
+  </section>
+
   <!-- ============================ BACKUP =========================== -->
   <section id="tab-backup" class="hidden">
     <div class="warnbox" id="storeWarn">
@@ -303,6 +333,7 @@
   <button data-t="pending"><svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/></svg>Pending</button>
   <button data-t="keys"><svg viewBox="0 0 24 24"><path d="M12.65 10A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H17v4h4v-4h2v-4H12.65zM7 14a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>Keywords</button>
   <button data-t="tasks"><svg viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-2 14-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9z"/></svg>Tasks</button>
+  <button data-t="judgments"><svg viewBox="0 0 24 24"><path d="M4 2h12l4 4v16H4V2zm2 2v16h12V7h-4V4H6zm2 6h8v2H8v-2zm0 4h8v2H8v-2zm0 4h5v2H8v-2z"/></svg>Judgments</button>
   <button data-t="backup"><svg viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>Backup</button>
 </nav>
 
@@ -313,7 +344,7 @@
 
 /* ------------------------------------------------------------------ store */
 const KEY = "casediary.v1";
-const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [], tasks: [],
+const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [], tasks: [], judgments: [],
   settings: { principalSeatOnly: true, pendingFilesEnabled: true }, seq: 1 };
 
 function load(){
@@ -711,8 +742,8 @@ function fmtDateTime(ms){ if(!ms) return "—"; const d=new Date(ms);
 
 /* ------------------------------------------------------------------- tabs */
 let tab = "cases", filter = "ACTIVE", query = "";
-const TABS = ["cases","diary","pending","keys","tasks","backup"];
-const TAB_TITLES = {cases:"CCMS", diary:"Diary", pending:"Pending Files", keys:"Keywords", tasks:"Tasks", backup:"Backup"};
+const TABS = ["cases","diary","pending","keys","tasks","judgments","backup"];
+const TAB_TITLES = {cases:"CCMS", diary:"Diary", pending:"Pending Files", keys:"Keywords", tasks:"Tasks", judgments:"Judgments", backup:"Backup"};
 function switchTab(name){
   tab = name;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x.dataset.t===tab));
@@ -736,6 +767,10 @@ document.getElementById("search").addEventListener("input", e=>{
   clearTimeout(window.__st);
   window.__st = setTimeout(render, 200);
 });
+document.getElementById("judgmentSearch").addEventListener("input", ()=>{
+  clearTimeout(window.__jst);
+  window.__jst = setTimeout(renderJudgments, 200);
+});
 
 /* ----------------------------------------------------------------- render */
 const esc = s => String(s==null?"":s).replace(/[&<>"']/g, m =>
@@ -743,10 +778,11 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, m =>
 
 function render(){
   if(tab === "cases")   renderCases();
-  if(tab === "diary")   renderDiary();
-  if(tab === "pending") renderPending();
-  if(tab === "keys")    renderKeys();
-  if(tab === "tasks")   renderTasks();
+  if(tab === "diary")     renderDiary();
+  if(tab === "pending")   renderPending();
+  if(tab === "keys")      renderKeys();
+  if(tab === "tasks")     renderTasks();
+  if(tab === "judgments") renderJudgments();
   document.getElementById("hSub").textContent =
     S.cases.filter(c=>c.status==="ACTIVE").length + " active cases · offline";
 }
@@ -1312,6 +1348,114 @@ function togglePriority(id){
   if(k && !k.builtin){ k.priority = k.priority === "PRIMARY" ? "OTHER" : "PRIMARY"; save(); render(); }
 }
 
+/* -------------------------------------------------------------- judgments */
+/* A personal reference library — title/citation/court/year/principle/notes/
+   tags, typed in by the lawyer. Deliberately never auto-populated with
+   invented case law; "source" is reserved for a future cloud-fetched entry
+   (e.g. "nadra-auto") to share this same list without being confused with
+   what was added by hand. */
+let judgmentTagFilter = "";
+function parseTags(raw){
+  return (raw||"").split(",").map(t=>t.trim()).filter(Boolean);
+}
+function renderJudgments(){
+  const q = (document.getElementById("judgmentSearch").value || "").trim().toLowerCase();
+  const allTags = [...new Set(S.judgments.flatMap(j=>j.tags||[]))].sort();
+  const chipsEl = document.getElementById("judgmentTagChips");
+  chipsEl.innerHTML = allTags.length ? `<div class="chips">` +
+    `<span class="chip ${judgmentTagFilter?"off":""}" onclick="setJudgmentTagFilter('')">All</span>` +
+    allTags.map(t=>`<span class="chip ${judgmentTagFilter===t?"":"off"}" onclick="setJudgmentTagFilter(${JSON.stringify(t)})">${esc(t)}</span>`).join("") +
+    `</div>` : "";
+
+  let list = S.judgments.slice().sort((a,b)=>b.addedAt-a.addedAt);
+  if(judgmentTagFilter) list = list.filter(j=>(j.tags||[]).includes(judgmentTagFilter));
+  if(q){
+    list = list.filter(j => [j.title, j.citation, j.court, j.year, j.principle, j.notes, (j.tags||[]).join(" ")]
+      .some(v => (v||"").toLowerCase().includes(q)));
+  }
+
+  const el = document.getElementById("judgmentList");
+  if(!S.judgments.length){
+    el.innerHTML = `<div class="empty">No judgments saved yet.<br>Add one above — this is your own
+      reference library, nothing here is fetched automatically.</div>`;
+    return;
+  }
+  if(!list.length){
+    el.innerHTML = `<div class="empty">Nothing matches that search.</div>`;
+    return;
+  }
+  el.innerHTML = `<h2>Judgments<span class="n">${list.length}</span></h2>` + list.map(j=>`
+    <div class="card">
+      ${j.citation ? `<div class="ref">${esc(j.citation)}</div>` : ""}
+      <div class="ttl" style="font-weight:700">${esc(j.title)}</div>
+      ${(j.court || j.year) ? `<div class="meta">${esc([j.court, j.year].filter(Boolean).join(" · "))}</div>` : ""}
+      ${j.principle ? `<div class="hit" style="margin-top:8px">${esc(j.principle)}</div>` : ""}
+      ${j.notes ? `<div class="meta" style="margin-top:6px"><i>${esc(j.notes)}</i></div>` : ""}
+      ${(j.tags||[]).length ? `<div class="chips" style="margin-top:8px">${j.tags.map(t=>`<span class="chip">${esc(t)}</span>`).join("")}</div>` : ""}
+      <div class="row" style="margin-top:10px">
+        <button class="btn3" onclick="editJudgment(${j.id})">Edit</button>
+        <button class="btnDanger" onclick="removeJudgment(${j.id})">Remove</button>
+      </div>
+    </div>`).join("");
+}
+function setJudgmentTagFilter(tag){ judgmentTagFilter = tag; renderJudgments(); }
+function addJudgment(){
+  const title = document.getElementById("newJudgmentTitle").value.trim();
+  if(title.length < 3){ alert("Enter the case title."); return; }
+  const j = {
+    id: nextId(),
+    title,
+    citation: document.getElementById("newJudgmentCitation").value.trim(),
+    court: document.getElementById("newJudgmentCourt").value.trim(),
+    year: document.getElementById("newJudgmentYear").value.trim(),
+    principle: document.getElementById("newJudgmentPrinciple").value.trim(),
+    notes: document.getElementById("newJudgmentNotes").value.trim(),
+    tags: parseTags(document.getElementById("newJudgmentTags").value),
+    source: "manual",
+    addedAt: Date.now()
+  };
+  S.judgments.push(j);
+  ["newJudgmentTitle","newJudgmentCitation","newJudgmentCourt","newJudgmentYear",
+    "newJudgmentPrinciple","newJudgmentNotes","newJudgmentTags"].forEach(id=>{ document.getElementById(id).value = ""; });
+  save(); render();
+}
+function removeJudgment(id){
+  if(!confirm("Remove this judgment from your library?")) return;
+  S.judgments = S.judgments.filter(j=>j.id!==id);
+  save(); render();
+}
+function editJudgment(id){
+  const j = S.judgments.find(x=>x.id===id);
+  if(!j) return;
+  openModal(`
+    <h2 style="margin-top:0">Edit judgment</h2>
+    <label>Case title</label><input id="edJTitle" value="${esc(j.title)}">
+    <label>Citation</label><input id="edJCitation" value="${esc(j.citation)}">
+    <div class="row">
+      <div><label>Court</label><input id="edJCourt" value="${esc(j.court)}"></div>
+      <div><label>Year</label><input id="edJYear" value="${esc(j.year)}"></div>
+    </div>
+    <label>Principle / holding</label><textarea id="edJPrinciple">${esc(j.principle)}</textarea>
+    <label>Your notes</label><textarea id="edJNotes">${esc(j.notes)}</textarea>
+    <label>Tags (comma-separated)</label><input id="edJTags" value="${esc((j.tags||[]).join(", "))}">
+    <button class="btn2" style="width:100%;margin-top:10px" onclick="saveJudgmentEdit(${id})">Save</button>
+  `);
+}
+function saveJudgmentEdit(id){
+  const j = S.judgments.find(x=>x.id===id);
+  if(!j) return;
+  const title = document.getElementById("edJTitle").value.trim();
+  if(title.length < 3){ alert("Enter the case title."); return; }
+  j.title = title;
+  j.citation = document.getElementById("edJCitation").value.trim();
+  j.court = document.getElementById("edJCourt").value.trim();
+  j.year = document.getElementById("edJYear").value.trim();
+  j.principle = document.getElementById("edJPrinciple").value.trim();
+  j.notes = document.getElementById("edJNotes").value.trim();
+  j.tags = parseTags(document.getElementById("edJTags").value);
+  save(); closeModal(); render();
+}
+
 /* ------------------------------------------------------------------ scan */
 function openLhc(){
   window.open("https://data.lhc.gov.pk/index.php/case_management/urgent_cause_list_final",
@@ -1744,7 +1888,8 @@ Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,
   switchTab,addPending,removePending,togglePendingSection,openSaveDialog,saveHitToCases,saveSelectedHits,
   toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,editFixed,updateFixed,dismissPendingHit,
   removeHit,removeFixed,togglePriority,searchScans,togglePrincipalSeatOnly,
-  addTask,toggleTaskDone,removeTask});
+  addTask,toggleTaskDone,removeTask,
+  addJudgment,removeJudgment,editJudgment,saveJudgmentEdit,setJudgmentTagFilter});
 
 /* A hit saved by an earlier build, before the bench-bracket regex was
    corrected, never gets re-checked on its own once it's in S.hits — this

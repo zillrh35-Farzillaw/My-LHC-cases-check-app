@@ -194,6 +194,26 @@ data class FixedCase(
 )
 
 /**
+ * A personal reference-library entry — a judgment or citation the lawyer
+ * wants to remember, with their own note on why it matters. Always typed in
+ * by hand; this app never invents case law on its own. [source] is reserved
+ * for a future cloud-fetched entry (e.g. "nadra-auto") to share this same
+ * list without being confused with what was added manually.
+ */
+data class Judgment(
+    var id: Long = 0,
+    var title: String = "",
+    var citation: String = "",
+    var court: String = "",
+    var year: String = "",
+    var principle: String = "",
+    var notes: String = "",
+    var tags: List<String> = emptyList(),
+    var source: String = "manual",
+    var addedAt: Long = 0L
+)
+
+/**
  * Something a senior advocate or officer told the lawyer to do, with a
  * deadline — tracked here so it's never missed. Unlike the web app, the
  * Android build can schedule a real alert for the deadline itself (see

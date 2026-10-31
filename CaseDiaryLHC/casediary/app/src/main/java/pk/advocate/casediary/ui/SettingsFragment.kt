@@ -131,6 +131,24 @@ class SettingsFragment : Fragment() {
             CloudSync.signOut()
             renderCloudSync()
         }
+        b.btnCloudUpload.setOnClickListener {
+            CloudSync.push(requireContext()) { ok, err ->
+                Snackbar.make(
+                    b.root,
+                    if (ok) "Uploaded to cloud." else "Upload failed: ${err ?: "unknown error"}",
+                    Snackbar.LENGTH_LONG
+                ).show()
+            }
+        }
+        b.btnCloudCheckNew.setOnClickListener {
+            CloudSync.pullNewHits(requireContext()) { count ->
+                Snackbar.make(
+                    b.root,
+                    if (count > 0) "$count new match${if (count == 1) "" else "es"} found." else "Nothing new.",
+                    Snackbar.LENGTH_LONG
+                ).show()
+            }
+        }
 
         renderTerms()
         renderSources()
@@ -142,6 +160,9 @@ class SettingsFragment : Fragment() {
         super.onResume()
         renderTimes()
         renderCloudSync()
+        if (CloudSync.isReady(requireContext()) && CloudSync.currentUser() != null) {
+            CloudSync.pullNewHits(requireContext()) { /* silent — Diary picks it up next time it's opened */ }
+        }
     }
 
     /** Optional, additive — see CLOUD-SETUP.md. Everything here stays inert
@@ -174,8 +195,13 @@ class SettingsFragment : Fragment() {
             return
         }
         CloudSync.signIn(email, pass) { ok, err ->
-            if (ok) renderCloudSync()
-            else Snackbar.make(b.root, "Could not sign in: ${err ?: "unknown error"}", Snackbar.LENGTH_LONG).show()
+            if (ok) {
+                renderCloudSync()
+                CloudSync.registerForPush(requireContext())
+                CloudSync.pullNewHits(requireContext()) { /* silent */ }
+            } else {
+                Snackbar.make(b.root, "Could not sign in: ${err ?: "unknown error"}", Snackbar.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -187,8 +213,12 @@ class SettingsFragment : Fragment() {
             return
         }
         CloudSync.signUp(email, pass) { ok, err ->
-            if (ok) renderCloudSync()
-            else Snackbar.make(b.root, "Could not create account: ${err ?: "unknown error"}", Snackbar.LENGTH_LONG).show()
+            if (ok) {
+                renderCloudSync()
+                CloudSync.registerForPush(requireContext())
+            } else {
+                Snackbar.make(b.root, "Could not create account: ${err ?: "unknown error"}", Snackbar.LENGTH_LONG).show()
+            }
         }
     }
 

@@ -66,6 +66,12 @@ class Prefs(context: Context) {
         get() = sp.getLong(K_LAST_UPDATE_CHECK, 0L)
         set(v) = sp.edit().putLong(K_LAST_UPDATE_CHECK, v).apply()
 
+    /** Opts this user's data into the scheduled, server-side cloud check — off
+     *  by default, same as the web app's equivalent setting. See CLOUD-SETUP.md. */
+    var cloudScrapeEnabled: Boolean
+        get() = sp.getBoolean(K_CLOUD_SCRAPE, false)
+        set(v) = sp.edit().putBoolean(K_CLOUD_SCRAPE, v).apply()
+
     companion object {
         private const val K_AUTO = "auto_check"
         private const val K_EVE_H = "eve_h"
@@ -79,5 +85,6 @@ class Prefs(context: Context) {
         private const val K_PRINCIPAL_SEAT = "principal_seat_only"
         private const val K_PENDING_ENABLED = "pending_files_enabled"
         private const val K_LAST_UPDATE_CHECK = "last_update_check_at"
+        private const val K_CLOUD_SCRAPE = "cloud_scrape_enabled"
     }
 }

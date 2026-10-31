@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Only applied once CLOUD-SETUP.md's google-services.json is actually
+// present — that file is what the plugin reads, and it legitimately
+// doesn't exist on a fresh checkout (or in CI) until someone sets up their
+// own free Firebase project. The Firebase SDK dependencies below still
+// compile and link fine either way; without this file and plugin they just
+// never get a default FirebaseApp to initialize, and CloudSync.isReady()
+// stays false — the app behaves exactly as it did before Cloud Sync existed.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "pk.advocate.casediary"
     compileSdk = 34
@@ -81,6 +92,14 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // Optional Cloud Sync (see CLOUD-SETUP.md) — these compile and link
+    // regardless of whether google-services.json exists; see CloudSync.kt
+    // for the runtime guard that keeps everything a no-op until it does.
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-messaging-ktx")
 
     testImplementation("junit:junit:4.13.2")
 }

@@ -25,6 +25,7 @@ import pk.advocate.casediary.databinding.ItemSourceBinding
 import pk.advocate.casediary.db.Db
 import pk.advocate.casediary.db.WatchTerm
 import pk.advocate.casediary.util.Backup
+import pk.advocate.casediary.util.CloudSync
 import pk.advocate.casediary.util.Dates
 import pk.advocate.casediary.util.Prefs
 import pk.advocate.casediary.util.UpdateChecker
@@ -124,14 +125,71 @@ class SettingsFragment : Fragment() {
             "Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
         b.btnCheckUpdate.setOnClickListener { checkForUpdate() }
 
+        b.btnCloudSignIn.setOnClickListener { cloudSignIn() }
+        b.btnCloudSignUp.setOnClickListener { cloudSignUp() }
+        b.btnCloudSignOut.setOnClickListener {
+            CloudSync.signOut()
+            renderCloudSync()
+        }
+
         renderTerms()
         renderSources()
         renderTimes()
+        renderCloudSync()
     }
 
     override fun onResume() {
         super.onResume()
         renderTimes()
+        renderCloudSync()
+    }
+
+    /** Optional, additive — see CLOUD-SETUP.md. Everything here stays inert
+     *  until a real Firebase project's google-services.json is in place. */
+    private fun renderCloudSync() {
+        if (!CloudSync.isReady(requireContext())) {
+            b.cloudStatus.text = "Not set up yet — see CLOUD-SETUP.md in the repo."
+            b.cloudSignedOutGroup.visibility = View.GONE
+            b.cloudSignedInGroup.visibility = View.GONE
+            return
+        }
+        val user = CloudSync.currentUser()
+        if (user == null) {
+            b.cloudStatus.text = "Sign in to sync your cases across devices and let a scheduled " +
+                "server-side check find new matches even while this app is closed."
+            b.cloudSignedOutGroup.visibility = View.VISIBLE
+            b.cloudSignedInGroup.visibility = View.GONE
+        } else {
+            b.cloudStatus.text = "Signed in as ${user.email}"
+            b.cloudSignedOutGroup.visibility = View.GONE
+            b.cloudSignedInGroup.visibility = View.VISIBLE
+        }
+    }
+
+    private fun cloudSignIn() {
+        val email = b.cloudEmail.text?.toString()?.trim().orEmpty()
+        val pass = b.cloudPassword.text?.toString().orEmpty()
+        if (email.isBlank() || pass.isBlank()) {
+            Snackbar.make(b.root, "Enter your email and password.", Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        CloudSync.signIn(email, pass) { ok, err ->
+            if (ok) renderCloudSync()
+            else Snackbar.make(b.root, "Could not sign in: ${err ?: "unknown error"}", Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    private fun cloudSignUp() {
+        val email = b.cloudEmail.text?.toString()?.trim().orEmpty()
+        val pass = b.cloudPassword.text?.toString().orEmpty()
+        if (email.isBlank() || pass.length < 6) {
+            Snackbar.make(b.root, "Enter an email and a password of at least 6 characters.", Snackbar.LENGTH_SHORT).show()
+            return
+        }
+        CloudSync.signUp(email, pass) { ok, err ->
+            if (ok) renderCloudSync()
+            else Snackbar.make(b.root, "Could not create account: ${err ?: "unknown error"}", Snackbar.LENGTH_LONG).show()
+        }
     }
 
     private fun renderTimes() {

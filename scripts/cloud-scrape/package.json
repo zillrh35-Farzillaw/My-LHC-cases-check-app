@@ -1,0 +1,10 @@
+{
+  "name": "ccms-cloud-scrape",
+  "private": true,
+  "type": "module",
+  "description": "Scheduled, server-side cause-list check for CCMS — runs on GitHub Actions so matches are found even when neither app is open. See ../../CLOUD-SETUP.md.",
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "firebase-admin": "^12.3.0"
+  }
+}

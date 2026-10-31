@@ -327,10 +327,13 @@
       <b style="font-size:14px">What this web version cannot do</b>
       <div class="note">
         A browser is not allowed to read another website's pages in the background,
-        so this cannot check the LHC site by itself at 6:30pm — that is why you paste
-        the list in. The Android APK does that part automatically.
+        so this page itself cannot check the LHC site at 6:30pm on its own — that is why
+        you paste the list in. The Android APK does that part automatically on-device;
+        setting up Cloud Sync below adds the same kind of always-on checking for the
+        web app too, run on a schedule outside the browser.
       </div>
     </div>
+    <div class="card" id="cloudSyncCard"></div>
     <div class="card">
       <b style="font-size:14px">About</b>
       <div class="note">CCMS — Causelist Checking &amp; Management System</div>
@@ -350,13 +353,20 @@
 
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 
+<!-- Firebase (compat SDK — a classic global `firebase`, matching this
+     file's plain-script, no-build-step design). Harmless if offline or if
+     cloud sync was never configured below; every call into it is guarded. -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
 <script>
 "use strict";
 
 /* ------------------------------------------------------------------ store */
 const KEY = "casediary.v1";
 const blank = { cases: [], keys: [], hits: [], pending: [], fixed: [], scans: [], tasks: [], judgments: [],
-  settings: { principalSeatOnly: true, pendingFilesEnabled: true }, seq: 1 };
+  settings: { principalSeatOnly: true, pendingFilesEnabled: true, cloudScrapeEnabled: false }, seq: 1 };
 
 function load(){
   try{
@@ -798,6 +808,7 @@ function render(){
   if(tab === "keys")      renderKeys();
   if(tab === "tasks")     renderTasks();
   if(tab === "judgments") renderJudgments();
+  if(tab === "backup")    renderCloudSync();
   document.getElementById("hSub").textContent =
     S.cases.filter(c=>c.status==="ACTIVE").length + " active cases · offline";
 }
@@ -1908,7 +1919,8 @@ Object.assign(window, {editCase,saveCase,deleteCase,viewCase,viewHit,addHearing,
   toggleHitSelect,clearHitSelection,selectAllHits,clearSelectedHits,editFixed,updateFixed,dismissPendingHit,
   removeHit,removeFixed,togglePriority,searchScans,togglePrincipalSeatOnly,
   addTask,toggleTaskDone,removeTask,
-  addJudgment,removeJudgment,editJudgment,saveJudgmentEdit,setJudgmentTagFilter});
+  addJudgment,removeJudgment,editJudgment,saveJudgmentEdit,setJudgmentTagFilter,
+  cloudSignIn,cloudSignUp,cloudSignOut,cloudPush,cloudPullAll,cloudToggleScrape});
 
 /* A hit saved by an earlier build, before the bench-bracket regex was
    corrected, never gets re-checked on its own once it's in S.hits — this
@@ -1923,6 +1935,158 @@ function pruneOtherBenchHits(){
   return S.hits.length !== before;
 }
 if(pruneOtherBenchHits()) save();
+
+/* -------------------------------------------------------------- cloud sync */
+/* Entirely optional and additive — the app works exactly as before, fully
+   offline/local-only, if this is never set up. See CLOUD-SETUP.md for how
+   to create a free Firebase project and fill these values in. They are NOT
+   secret — Firebase's own docs confirm a web app's client config is meant
+   to be public; access is controlled by Firestore's security rules
+   instead (see firestore.rules), not by hiding this object. */
+const firebaseConfig = {
+  apiKey: "REPLACE_ME",
+  authDomain: "REPLACE_ME.firebaseapp.com",
+  projectId: "REPLACE_ME",
+  storageBucket: "REPLACE_ME.appspot.com",
+  messagingSenderId: "REPLACE_ME",
+  appId: "REPLACE_ME"
+};
+
+let cloudReady = false;
+let cloudUser = null;
+let cloudLastSyncedAt = 0;
+
+function cloudBuildPayload(){
+  return {
+    cases:S.cases, keys:S.keys, hits:S.hits, pending:S.pending, fixed:S.fixed,
+    tasks:S.tasks, judgments:S.judgments, settings:S.settings, seq:S.seq
+  };
+}
+/* Merges in any hit the cloud scraper (or another device) found that this
+   device doesn't have yet — by hash, same dedup key the app already uses —
+   without ever deleting anything local. Resolves after the merge (or
+   immediately if there was nothing to merge), never rejects on its own. */
+function cloudMergeRemoteHits(ref){
+  return ref.get().then(doc => {
+    if(!doc.exists) return;
+    const remoteHits = doc.data().hits || [];
+    const haveHashes = new Set(S.hits.map(h=>h.hash));
+    const fresh = remoteHits.filter(h => h.hash && !haveHashes.has(h.hash));
+    if(!fresh.length) return;
+    S.hits = [...fresh, ...S.hits];
+    if(S.hits.length > 400) S.hits.length = 400;
+    save();
+  });
+}
+function pullNewHitsFromCloud(){
+  if(!cloudReady || !cloudUser) return;
+  const ref = firebase.firestore().collection("users").doc(cloudUser.uid);
+  cloudMergeRemoteHits(ref).then(()=>{ if(tab==="diary") render(); })
+    .catch(e => console.warn("Could not check cloud for new hits:", e));
+}
+/* Always merges in any cloud-only hits first, THEN pushes — so uploading
+   your own edits can never silently wipe out a match the scheduled cloud
+   check already found while you weren't looking. */
+function cloudPush(){
+  if(!cloudReady || !cloudUser) return;
+  const ref = firebase.firestore().collection("users").doc(cloudUser.uid);
+  cloudMergeRemoteHits(ref).then(() => {
+    const payload = cloudBuildPayload();
+    payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+    return ref.set(payload);
+  }).then(()=>{ cloudLastSyncedAt = Date.now(); render(); })
+    .catch(e => alert("Upload failed: " + e.message));
+}
+function cloudPullAll(){
+  if(!cloudReady || !cloudUser) return;
+  if(!confirm("Replace everything on this device with what's saved in the cloud? This cannot be undone.")) return;
+  firebase.firestore().collection("users").doc(cloudUser.uid).get()
+    .then(doc => {
+      if(!doc.exists){ alert("Nothing saved in the cloud yet — upload first."); return; }
+      const d = doc.data();
+      S.cases = d.cases || []; S.keys = d.keys || []; S.hits = d.hits || [];
+      S.pending = d.pending || []; S.fixed = d.fixed || []; S.tasks = d.tasks || [];
+      S.judgments = d.judgments || []; S.settings = Object.assign({}, S.settings, d.settings || {});
+      S.seq = Math.max(S.seq, d.seq || 0);
+      save(); render();
+    })
+    .catch(e => alert("Download failed: " + e.message));
+}
+function cloudToggleScrape(){
+  S.settings.cloudScrapeEnabled = document.getElementById("cloudScrapeEnabled").checked;
+  save();
+  cloudPush();
+}
+function cloudSignUp(){
+  if(!cloudReady) return;
+  const email = (document.getElementById("cloudEmail").value || "").trim();
+  const pass = document.getElementById("cloudPassword").value || "";
+  if(!email || pass.length < 6){ alert("Enter an email and a password of at least 6 characters."); return; }
+  firebase.auth().createUserWithEmailAndPassword(email, pass)
+    .catch(e => alert("Could not create account: " + e.message));
+}
+function cloudSignIn(){
+  if(!cloudReady) return;
+  const email = (document.getElementById("cloudEmail").value || "").trim();
+  const pass = document.getElementById("cloudPassword").value || "";
+  if(!email || !pass){ alert("Enter your email and password."); return; }
+  firebase.auth().signInWithEmailAndPassword(email, pass)
+    .catch(e => alert("Could not sign in: " + e.message));
+}
+function cloudSignOut(){
+  if(!cloudReady) return;
+  firebase.auth().signOut();
+}
+function renderCloudSync(){
+  const el = document.getElementById("cloudSyncCard");
+  if(!el) return;
+  if(!cloudReady){
+    el.innerHTML = `<b style="font-size:14px">Cloud Sync</b>
+      <div class="note">Not set up yet — see CLOUD-SETUP.md in the repo for the free setup steps.
+      The app works exactly as before without this.</div>`;
+    return;
+  }
+  if(!cloudUser){
+    el.innerHTML = `<b style="font-size:14px">Cloud Sync</b>
+      <div class="note">Sign in to sync your cases across devices, and let a scheduled
+      server-side check find new matches even while this page is closed.</div>
+      <label>Email</label><input id="cloudEmail" type="email" autocomplete="username">
+      <label>Password</label><input id="cloudPassword" type="password" autocomplete="current-password">
+      <div class="row" style="margin-top:10px">
+        <button class="btn" onclick="cloudSignIn()">Sign in</button>
+        <button class="btn3" onclick="cloudSignUp()">Create account</button>
+      </div>`;
+    return;
+  }
+  el.innerHTML = `<b style="font-size:14px">Cloud Sync</b>
+    <div class="note">Signed in as ${esc(cloudUser.email || "")}.</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <b style="font-size:13px;flex:1">Let the scheduled server-side check scan for me</b>
+      <label class="switch" style="margin:0">
+        <input type="checkbox" id="cloudScrapeEnabled" onchange="cloudToggleScrape()"
+          ${S.settings.cloudScrapeEnabled ? "checked" : ""}>
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" onclick="cloudPush()">Upload my data to cloud</button>
+      <button class="btn3" onclick="cloudPullAll()">Download from cloud</button>
+    </div>
+    <div class="note" id="cloudStatus" style="margin-top:6px">${cloudLastSyncedAt ? "Uploaded " + esc(stamp(cloudLastSyncedAt)) : "Not uploaded yet this session."}</div>
+    <button class="btn3" style="width:100%;margin-top:8px" onclick="cloudSignOut()">Sign out</button>`;
+}
+
+try{
+  if(typeof firebase !== "undefined" && firebaseConfig.apiKey !== "REPLACE_ME"){
+    firebase.initializeApp(firebaseConfig);
+    cloudReady = true;
+    firebase.auth().onAuthStateChanged(user => {
+      cloudUser = user;
+      if(user) pullNewHitsFromCloud();
+      if(tab === "backup") renderCloudSync();
+    });
+  }
+}catch(e){ console.warn("Cloud sync unavailable:", e); cloudReady = false; }
 
 render();
 </script>

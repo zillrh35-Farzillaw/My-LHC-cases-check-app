@@ -4,6 +4,8 @@
     <color name="brand_dark">#0A3B24</color>
     <color name="brand_light">#D7EADF</color>
     <color name="accent">#B58B2A</color>
+    <color name="accent_light">#FDECD9</color>
+    <color name="accent_dark">#8A4B08</color>
     <color name="bg">#F7F7F5</color>
     <color name="surface">#FFFFFF</color>
     <color name="text_primary">#16181A</color>

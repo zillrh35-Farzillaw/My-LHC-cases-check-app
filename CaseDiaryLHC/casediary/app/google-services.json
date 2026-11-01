@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "156932075558",
+    "project_id": "ccms-9ad97",
+    "storage_bucket": "ccms-9ad97.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:156932075558:android:cbd6a790c98fa613baf6e7",
+        "android_client_info": {
+          "package_name": "pk.advocate.casediary"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNAcBK5Nn8Zp1kl7jpLmMvpEPIDMq8ccs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

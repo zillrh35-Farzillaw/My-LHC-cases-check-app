@@ -1,0 +1,65 @@
+name: Build APK
+
+on:
+  push:
+    paths:
+      - "CaseDiaryLHC/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: CaseDiaryLHC/casediary
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Build debug APK
+        env:
+          APP_VERSION_CODE: ${{ github.run_number }}
+          APP_VERSION_NAME: "1.0.${{ github.run_number }}"
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CaseDiary-debug-apk
+          path: CaseDiaryLHC/casediary/app/build/outputs/apk/debug/app-debug.apk
+
+      # A workflow artifact needs a GitHub login and expires after a few
+      # months, so it can't be what the in-app update checker (Settings ->
+      # Check for updates) points a phone at. A GitHub Release gives every
+      # build a stable, public, versioned download the app can find and
+      # fetch on its own via the public "latest release" API.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG="v${{ github.run_number }}"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          NOTES="$(git log -1 --pretty=%B)"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo "${{ github.repository }}" \
+              --title "CCMS v${{ github.run_number }}" \
+              --notes "$NOTES"
+          fi

@@ -1,0 +1,38 @@
+name: Scheduled Cloud Cause-List Check
+
+# Runs even when neither the web app nor the Android app is open, so a
+# match can still be found and pushed to a signed-in device. Entirely free
+# (GitHub Actions on a public repo), separate from the existing Build APK
+# workflow — this never touches CaseDiaryLHC/ and can't affect that build.
+#
+# No-ops cleanly (green, not red) until FIREBASE_SERVICE_ACCOUNT_KEY is
+# added as a repository secret — see CLOUD-SETUP.md.
+
+on:
+  schedule:
+    - cron: "0 */3 * * *" # every 3 hours
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/cloud-scrape
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run scheduled scan
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: node scrape.mjs

@@ -84,6 +84,18 @@ class CaseDetailActivity : AppCompatActivity() {
             )
         }
         lines.add("Status: ${c.status.lowercase().replaceFirstChar { it.uppercase() }}")
+        if (!c.watched) lines.add("Not checked automatically when scanning cause lists")
+        val fixedEntry = db.listFixedCases().find { it.caseId == caseId }
+        if (fixedEntry != null) {
+            lines.add(
+                "\n✓ Fixed in cause list — " +
+                    (fixedEntry.proceedings.ifBlank { "listed" }) +
+                    (if (fixedEntry.causelistNo.isNotBlank()) " (Causelist No. ${fixedEntry.causelistNo})" else "") +
+                    " on ${Dates.fmt(fixedEntry.fixedDate)}"
+            )
+        } else {
+            lines.add("\nNot yet seen in a checked cause list.")
+        }
         if (c.notes.isNotBlank()) lines.add("\n${c.notes}")
         b.details.text = lines.joinToString("\n")
 

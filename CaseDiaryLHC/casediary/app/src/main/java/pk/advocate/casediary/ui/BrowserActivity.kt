@@ -32,6 +32,7 @@ class BrowserActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityBrowserBinding
     private lateinit var prefs: Prefs
+    private lateinit var loading: LoadingOverlay
     private var hasAutoScanned = false
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -40,6 +41,7 @@ class BrowserActivity : AppCompatActivity() {
         b = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(b.root)
         prefs = Prefs(this)
+        loading = LoadingOverlay(b.loadingOverlay)
 
         b.toolbar.setNavigationOnClickListener { finish() }
 
@@ -94,9 +96,11 @@ class BrowserActivity : AppCompatActivity() {
         val url = b.web.url ?: DEFAULT_URL
         val title = b.web.title ?: "Cause list"
 
+        loading.show("Reading this page…")
         b.web.evaluateJavascript("(function(){return document.body.innerText;})();") { raw ->
             val text = decodeJsString(raw)
             if (text.isBlank()) {
+                loading.hide()
                 if (!silentIfEmpty) {
                     Snackbar.make(b.root, "Nothing readable on this page yet", Snackbar.LENGTH_SHORT)
                         .show()
@@ -108,6 +112,7 @@ class BrowserActivity : AppCompatActivity() {
                 val result = withContext(Dispatchers.IO) {
                     CauseListScraper(applicationContext).scanText(text, title.take(60), url)
                 }
+                loading.hide()
 
                 if (result.newHits > 0) {
                     Notifications.notifyFixtures(applicationContext, result.newHits, result.lines)
@@ -140,6 +145,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        loading.cancel()
         b.web.stopLoading()
         b.web.destroy()
         super.onDestroy()

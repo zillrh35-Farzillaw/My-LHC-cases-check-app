@@ -5,6 +5,8 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import pk.advocate.casediary.db.Db
 import pk.advocate.casediary.db.Fixture
+import pk.advocate.casediary.db.TermHit
+import pk.advocate.casediary.util.Prefs
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -26,7 +28,8 @@ class CauseListScraper(private val context: Context) {
         val totalHits: Int,
         val rowsScanned: Int,
         val errors: List<String>,
-        val lines: List<String>
+        val lines: List<String>,
+        val approvalHits: Int = 0
     )
 
     private val db = Db.get(context)
@@ -40,6 +43,7 @@ class CauseListScraper(private val context: Context) {
         var newHits = 0
         var totalHits = 0
         var rows = 0
+        var approvalHits = 0
         val errors = ArrayList<String>()
         val lines = ArrayList<String>()
 
@@ -50,6 +54,7 @@ class CauseListScraper(private val context: Context) {
                 newHits += r.newHits
                 totalHits += r.totalHits
                 rows += r.rowsScanned
+                approvalHits += r.approvalHits
                 lines.addAll(r.lines)
             } catch (e: Exception) {
                 errors.add("${src.label}: ${e.message ?: e.javaClass.simpleName}")
@@ -57,7 +62,8 @@ class CauseListScraper(private val context: Context) {
         }
 
         db.pruneFixtures()
-        return Result(newHits, totalHits, rows, errors, lines)
+        db.pruneScanRows()
+        return Result(newHits, totalHits, rows, errors, lines, approvalHits)
     }
 
     fun fetch(urlString: String): String {
@@ -101,68 +107,156 @@ class CauseListScraper(private val context: Context) {
     }
 
     private fun scanRows(
-        rows: List<String>,
+        rowsIn: List<String>,
         listDate: String,
         sourceLabel: String,
         sourceUrl: String
     ): Result {
         val terms = db.listWatchTerms(onlyEnabled = true)
         val cases = db.listCases(null, null)
-        if (terms.isEmpty() && cases.isEmpty()) {
+        val pending = db.listPendingFiles()
+        val merged = Matcher.mergeSplitCmLines(rowsIn)
+        db.insertScanRows(sourceLabel, merged)
+
+        val prefs = Prefs(context)
+        val rows = if (prefs.principalSeatOnly) merged.filterNot { Matcher.isOtherBench(it) } else merged
+        // Rows saved by an earlier build, before the bench-bracket regex was
+        // corrected, never get re-checked on their own — clean those up on
+        // every scan so a fix here doesn't leave old stale hits behind.
+        db.pruneOtherBenchFixtures(prefs.principalSeatOnly)
+        // Section-level pause: the lawyer can turn off pending-file matching for
+        // the whole list at once (e.g. while tidying it up) without deleting it.
+        val activePending = if (prefs.pendingFilesEnabled) pending else emptyList()
+
+        if (terms.isEmpty() && cases.isEmpty() && pending.isEmpty()) {
             return Result(
-                0, 0, rows.size,
-                listOf("Nothing to look for yet — add a keyword or a case first"),
+                0, 0, rowsIn.size,
+                listOf("Nothing to look for yet — add a keyword, a case or a pending file first"),
                 emptyList()
             )
         }
 
         // Tokenise the terms once, not once per row.
-        val probes = Matcher.compile(terms, cases)
+        val probes = Matcher.compile(terms, cases, activePending)
 
-        var newHits = 0
         var totalHits = 0
         val lines = ArrayList<String>()
+        // One Fixture per row — every keyword, case number and pending file
+        // that matched the same line is merged into that row's term list
+        // instead of duplicating the row per keyword.
         val found = ArrayList<Fixture>()
         val now = System.currentTimeMillis()
 
-        for (row in rows) {
+        // Pass 1: find every matched row and compute its own identity (hash)
+        // and, for C.M./application rows, which main case they belong to.
+        data class Entry(
+            val row: String, val hits: List<Matcher.Hit>, val cm: Boolean, val parents: List<String>,
+            val clipped: String, val hash: String, var groupHash: String = ""
+        )
+        // The presiding judge is printed once per bench section (a date/bench-
+        // type header, then one or two judge lines), never on the case row
+        // itself — tracked here across rows in print order and prefixed onto
+        // whatever this section's rows turn out to match.
+        var currentJudges = mutableListOf<String>()
+        val entries = rows.mapNotNull { row ->
+            if (Matcher.isSectionReset(row)) currentJudges = mutableListOf()
+            Matcher.extractJudge(row)?.let { currentJudges.add(it); return@mapNotNull null }
+
             val all = Matcher.findHits(row, probes)
-            if (all.isEmpty()) continue
-            // A row that is one of the user's own cases belongs under "My cases"
-            // only — a keyword matching the same line must not duplicate it.
-            val mine = all.filter { it.caseId != 0L }
-            val hits = if (mine.isNotEmpty()) mine else all
-            val clipped = if (row.length > 400) row.substring(0, 400) + "…" else row
-            for (h in hits) {
-                totalHits++
-                found.add(
-                    Fixture(
-                        hash = Matcher.hashOf(sourceUrl, listDate, clipped, h.term),
-                        caseId = h.caseId,
-                        sourceLabel = sourceLabel,
-                        sourceUrl = sourceUrl,
-                        listDate = listDate,
-                        raw = clipped,
-                        matchedTerm = h.term,
-                        matchedKind = h.kind,
-                        foundAt = now,
-                        seen = false
-                    )
-                )
+            if (all.isEmpty()) return@mapNotNull null
+            val cm = Matcher.isCmRow(row)
+            val parents = if (cm) Matcher.cmParentRefs(row) else emptyList()
+            val judge = currentJudges.joinToString(" & ")
+            val base = if (row.length > 400) row.substring(0, 400) + "…" else row
+            val clipped = if (judge.isNotBlank()) "[$judge] $base" else base
+            Entry(row, all, cm, parents, clipped, Matcher.hashOf(sourceUrl, listDate, clipped))
+        }
+
+        // Pass 2: every bare main-case row this scan matched, indexed by its
+        // ref, so a C.M. filed in it can be found regardless of print order.
+        val mainCaseHashByRef = HashMap<String, String>()
+        for (e in entries) {
+            if (e.cm) continue
+            for (ref in Matcher.ownCaseRefs(e.row)) mainCaseHashByRef.putIfAbsent(ref, e.hash)
+        }
+
+        // Pass 3: work out which single "box" each row belongs to. A C.M.
+        // whose main case also matched joins that case's box; a C.M. whose
+        // main case did NOT turn up on its own still gets a box — the first
+        // such C.M. becomes that box, and any further C.M.s of the very same
+        // case join it — so the same case is never shown twice just because
+        // several of its applications matched.
+        val cmGroupHash = HashMap<String, String>()
+        for (e in entries) {
+            e.groupHash = if (e.cm && e.parents.isNotEmpty()) {
+                val mainRef = e.parents.firstOrNull { mainCaseHashByRef.containsKey(it) }
+                if (mainRef != null) {
+                    mainCaseHashByRef.getValue(mainRef)
+                } else {
+                    cmGroupHash.getOrPut(e.parents[0]) { e.hash }
+                }
+            } else {
+                e.hash
             }
+        }
+
+        // Pass 4: fold every non-root row into its group's root entry as "related".
+        val roots = LinkedHashMap<String, Pair<Entry, MutableList<Entry>>>()
+        for (e in entries) if (e.hash == e.groupHash) roots[e.hash] = e to ArrayList()
+        for (e in entries) {
+            if (e.hash == e.groupHash) continue
+            val g = roots[e.groupHash]
+            if (g != null) g.second.add(e) else roots[e.hash] = e to ArrayList() // safety net — never silently lose a row
+        }
+
+        for ((entry, related) in roots.values) {
+            val allHits = (listOf(entry) + related).flatMap { it.hits }
+            val mine = allHits.filter { it.caseId != 0L }
+            val hits = if (mine.isNotEmpty()) mine else allHits
+            totalHits += hits.size
+
+            val caseId = hits.firstOrNull { it.caseId != 0L }?.caseId ?: 0L
+            val pendingId = if (caseId == 0L) hits.firstOrNull { it.pendingId != 0L }?.pendingId ?: 0L else 0L
+            val seenTerms = HashSet<String>()
+            val termHits = ArrayList<TermHit>()
+            for (h in hits) {
+                val key = Matcher.normalize(h.term)
+                if (!seenTerms.add(key)) continue
+                termHits.add(TermHit(h.term, h.kind))
+            }
+
+            found.add(
+                Fixture(
+                    hash = entry.hash,
+                    caseId = caseId,
+                    pendingId = pendingId,
+                    sourceLabel = sourceLabel,
+                    sourceUrl = sourceUrl,
+                    listDate = listDate,
+                    raw = entry.clipped,
+                    terms = termHits,
+                    relatedRaw = related.map { it.clipped },
+                    foundAt = now,
+                    seen = false
+                )
+            )
         }
 
         // One transaction for the whole page rather than one per row.
         val inserted = db.insertFixtures(found)
+        var approvalHits = 0
         for (f in inserted) {
-            newHits++
+            if (f.needsApproval()) approvalHits++
             lines.add(
-                "${f.matchedTerm} — $sourceLabel" +
-                    if (listDate.isNotBlank()) " ($listDate)" else ""
+                buildString {
+                    append(f.termsLabel().ifBlank { "Match" }).append(" — ").append(sourceLabel)
+                    if (listDate.isNotBlank()) append(" (").append(listDate).append(")")
+                    if (f.needsApproval()) append(" — needs approval")
+                }
             )
         }
 
-        return Result(newHits, totalHits, rows.size, emptyList(), lines)
+        return Result(inserted.size, totalHits, rowsIn.size, emptyList(), lines, approvalHits)
     }
 
     /**

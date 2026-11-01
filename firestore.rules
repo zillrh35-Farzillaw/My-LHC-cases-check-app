@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// One document per signed-in user, at /users/{uid} — the same shape as the
+// app's existing local state (cases, keys, hits, pending, fixed, tasks,
+// judgments, settings, seq). A lawyer's own data is readable/writable only
+// by that same lawyer, never by anyone else, and the GitHub Actions scraper
+// writes to it using an admin service account (which bypasses these rules
+// entirely — these rules only govern direct client access from the web app
+// or the Android app).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

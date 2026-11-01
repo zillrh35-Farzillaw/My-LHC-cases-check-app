@@ -33,6 +33,14 @@
             android:orientation="vertical"
             android:padding="14dp">
 
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/swWatched"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:checked="true"
+                android:text="Check this case's number automatically when scanning cause lists" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

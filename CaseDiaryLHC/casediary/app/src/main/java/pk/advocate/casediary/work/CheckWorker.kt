@@ -29,6 +29,7 @@ class CheckWorker(appContext: Context, params: WorkerParameters) :
                 prefs.lastCheckResult = buildString {
                     append("${result.newHits} new, ${result.totalHits} matched, ")
                     append("${result.rowsScanned} rows")
+                    if (result.approvalHits > 0) append(", ${result.approvalHits} awaiting approval")
                     if (result.errors.isNotEmpty()) {
                         append(" — ${result.errors.size} source(s) failed: ")
                         append(result.errors.joinToString("; ").take(220))
@@ -80,9 +81,11 @@ class CheckWorker(appContext: Context, params: WorkerParameters) :
             val prefs = Prefs(context)
             val result = CauseListScraper(context).runAll()
             prefs.lastCheckAt = System.currentTimeMillis()
-            prefs.lastCheckResult =
-                "${result.newHits} new, ${result.totalHits} matched, ${result.rowsScanned} rows" +
-                    if (result.errors.isEmpty()) "" else " — ${result.errors.joinToString("; ").take(220)}"
+            prefs.lastCheckResult = buildString {
+                append("${result.newHits} new, ${result.totalHits} matched, ${result.rowsScanned} rows")
+                if (result.approvalHits > 0) append(", ${result.approvalHits} awaiting approval")
+                if (result.errors.isNotEmpty()) append(" — ${result.errors.joinToString("; ").take(220)}")
+            }
             if (result.newHits > 0) {
                 Notifications.notifyFixtures(context, result.newHits, result.lines)
             }

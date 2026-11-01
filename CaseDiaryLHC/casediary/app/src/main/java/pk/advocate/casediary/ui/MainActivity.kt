@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
         b.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_diary -> show(TAB_DIARY)
+                R.id.nav_cases -> show(TAB_CASES)
                 R.id.nav_pending -> show(TAB_PENDING)
                 R.id.nav_tasks -> show(TAB_TASKS)
                 R.id.nav_judgments -> show(TAB_JUDGMENTS)
@@ -67,6 +68,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectTab(tab: String) {
         b.bottomNav.selectedItemId = when (tab) {
+            TAB_CASES -> R.id.nav_cases
             TAB_PENDING -> R.id.nav_pending
             TAB_TASKS -> R.id.nav_tasks
             TAB_JUDGMENTS -> R.id.nav_judgments
@@ -78,6 +80,7 @@ class MainActivity : AppCompatActivity() {
     private fun show(tab: String): Boolean {
         currentTab = tab
         val fragment: Fragment = when (tab) {
+            TAB_CASES -> CasesFragment()
             TAB_PENDING -> PendingFragment()
             TAB_TASKS -> TasksFragment()
             TAB_JUDGMENTS -> JudgmentsFragment()
@@ -89,6 +92,7 @@ class MainActivity : AppCompatActivity() {
             .commit()
 
         b.toolbar.title = when (tab) {
+            TAB_CASES -> getString(R.string.tab_cases)
             TAB_PENDING -> getString(R.string.tab_pending)
             TAB_TASKS -> getString(R.string.tab_tasks)
             TAB_JUDGMENTS -> getString(R.string.tab_judgments)
@@ -107,6 +111,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_OPEN_TAB = "open_tab"
         const val TAB_DIARY = "diary"
+        const val TAB_CASES = "cases"
         const val TAB_PENDING = "pending"
         const val TAB_TASKS = "tasks"
         const val TAB_JUDGMENTS = "judgments"

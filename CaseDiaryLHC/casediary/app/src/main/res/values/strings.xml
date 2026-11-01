@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">CCMS</string>
 
+    <string name="tab_cases">Cases</string>
     <string name="tab_diary">Diary</string>
     <string name="tab_pending">Pending</string>
     <string name="tab_tasks">Tasks</string>
@@ -24,9 +25,12 @@
     <string name="cancel">Cancel</string>
     <string name="close">Close</string>
 
+    <string name="filter_all">All</string>
     <string name="filter_active">Active</string>
     <string name="filter_decided">Decided</string>
     <string name="filter_archived">Archived</string>
+    <string name="search_cases_hint">Case no., party, court, judge, notes…</string>
+    <string name="empty_cases">No cases yet.\nTap + to add one, or approve a Diary match to save it here automatically.</string>
 
     <string name="empty_diary">Nothing here yet.\nOpen the LHC site and scan a page, or add a hearing date to a case.</string>
 

@@ -5,6 +5,10 @@
         android:icon="@drawable/ic_calendar"
         android:title="@string/tab_diary" />
     <item
+        android:id="@+id/nav_cases"
+        android:icon="@drawable/ic_folder"
+        android:title="@string/tab_cases" />
+    <item
         android:id="@+id/nav_pending"
         android:icon="@drawable/ic_pending"
         android:title="@string/tab_pending" />
